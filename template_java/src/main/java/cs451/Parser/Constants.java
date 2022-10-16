@@ -1,4 +1,4 @@
-package cs451;
+package cs451.Parser;
 
 public class Constants {
     public static final int ARG_LIMIT_CONFIG = 7;

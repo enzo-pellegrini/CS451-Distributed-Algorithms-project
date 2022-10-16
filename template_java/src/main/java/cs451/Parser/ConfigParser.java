@@ -1,10 +1,9 @@
-package cs451;
+package cs451.Parser;
 
 import java.io.File;
 
 public class ConfigParser {
-
-    private String path;
+    protected String path;
 
     public boolean populate(String value) {
         File file = new File(value);

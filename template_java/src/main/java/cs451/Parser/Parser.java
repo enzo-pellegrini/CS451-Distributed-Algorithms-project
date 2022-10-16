@@ -1,15 +1,17 @@
-package cs451;
+package cs451.Parser;
+
+import cs451.Parser.PerfectLinksConfigParser.*;
 
 import java.util.List;
 
 public class Parser {
 
-    private String[] args;
-    private long pid;
-    private IdParser idParser;
-    private HostsParser hostsParser;
-    private OutputParser outputParser;
-    private ConfigParser configParser;
+    protected String[] args;
+    protected long pid;
+    protected final IdParser idParser = new IdParser();
+    protected final HostsParser hostsParser = new HostsParser();
+    protected final OutputParser outputParser = new OutputParser();
+    protected final ConfigParser configParser = new ConfigParser();
 
     public Parser(String[] args) {
         this.args = args;
@@ -17,11 +19,6 @@ public class Parser {
 
     public void parse() {
         pid = ProcessHandle.current().pid();
-
-        idParser = new IdParser();
-        hostsParser = new HostsParser();
-        outputParser = new OutputParser();
-        configParser = new ConfigParser();
 
         int argsNum = args.length;
         if (argsNum != Constants.ARG_LIMIT_CONFIG) {
@@ -49,7 +46,7 @@ public class Parser {
         }
     }
 
-    private void help() {
+    protected void help() {
         System.err.println("Usage: ./run.sh --id ID --hosts HOSTS --output OUTPUT CONFIG");
         System.exit(1);
     }
@@ -69,5 +66,6 @@ public class Parser {
     public String config() {
         return configParser.getPath();
     }
+
 
 }

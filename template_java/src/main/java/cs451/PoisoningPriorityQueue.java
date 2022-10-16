@@ -1,6 +1,8 @@
 package cs451;
 
 import java.util.PriorityQueue;
+import java.util.concurrent.BlockingDeque;
+import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -32,9 +34,10 @@ public class PoisoningPriorityQueue<T extends Comparable> {
             return null;
         }
 
-        lock.lockInterruptibly();
-
         T result = null;
+
+        final Lock lock = this.lock;
+        lock.lock();
         try {
             while (!poisoned && (result = q.poll()) == null) {
                 nonEmpty.await();
@@ -54,8 +57,9 @@ public class PoisoningPriorityQueue<T extends Comparable> {
     public void offer(T val) throws IllegalArgumentException {
         if (val == null)
             throw new IllegalArgumentException();
-        lock.lock();
 
+        final Lock lock = this.lock;
+        lock.lock();
         try {
             q.offer(val);
             nonEmpty.notify();
