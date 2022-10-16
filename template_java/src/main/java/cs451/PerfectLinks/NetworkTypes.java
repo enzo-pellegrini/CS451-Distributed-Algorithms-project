@@ -110,7 +110,7 @@ public class NetworkTypes {
 
         public byte[] getSerializedMessage() {
             if (buff == null) {
-                buff = Utils.serialize(message);
+                buff = Serialization.serialize(message);
             }
             return buff;
         }

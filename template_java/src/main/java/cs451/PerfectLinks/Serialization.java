@@ -5,7 +5,7 @@ import java.io.*;
 /**
  * Contains static methods for serialization and deserialization
  */
-class Utils {
+class Serialization {
 
     /**
      * Serialize object to byte array

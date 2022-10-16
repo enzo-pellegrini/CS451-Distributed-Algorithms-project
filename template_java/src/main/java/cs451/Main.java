@@ -45,6 +45,7 @@ public class Main {
         System.out.println("Time since start " + elapsed.getSeconds());
         //write/flush output file if necessary
         System.out.println("Writing output.");
+        outputWriter.flush();
     }
 
     private static void initSignalHandlers() {

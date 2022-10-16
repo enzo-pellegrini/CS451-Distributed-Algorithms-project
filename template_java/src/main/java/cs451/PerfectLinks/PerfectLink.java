@@ -217,7 +217,7 @@ public class PerfectLink<T extends Serializable> {
                     DatagramPacket p = new DatagramPacket(buff, buff.length);
                     s.receive(p);
 
-                    Object received = Utils.deserialize(buff);
+                    Object received = Serialization.deserialize(buff);
 
                     if (received instanceof AckPacket) {
                         AckPacket ap = (AckPacket) received;
@@ -242,7 +242,7 @@ public class PerfectLink<T extends Serializable> {
         }
 
         private void sendAckForPacket(DataPacket dp) throws IOException {
-            byte[] buff = Utils.serialize(new NetworkTypes.AckPacket(dp.n, myId));
+            byte[] buff = Serialization.serialize(new NetworkTypes.AckPacket(dp.n, myId));
             final Host dst = hosts.get(dp.from - 1); // TODO: maybe too great of an assumption?
             s.send(new DatagramPacket(buff, buff.length, InetAddress.getByName(dst.getIp()), dst.getPort()));
         }

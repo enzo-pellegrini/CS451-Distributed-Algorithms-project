@@ -2,35 +2,39 @@ package cs451.Printer;
 
 import java.io.BufferedWriter;
 import java.io.IOException;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public abstract class Printer {
     protected static final int SLEEP_PERIOD = 10;
     protected final BufferedWriter writer;
-    protected final ConcurrentLinkedQueue<String> queue = new ConcurrentLinkedQueue<>();
+    protected final BlockingQueue<String> queue = new LinkedBlockingQueue<>();
     protected final AtomicBoolean running = new AtomicBoolean(true);
 
     protected Printer(BufferedWriter bw) {
         this.writer = bw;
 
         Thread t = new Thread(() -> {
-            while (running.get()) {
-                String curr = queue.poll();
-                while (curr != null && running.get()) {
-                    try {
-                        writer.write(curr);
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }
-
-                    curr = queue.poll();
+            while (!queue.isEmpty() || running.get()) {
+                String curr = null;
+                try {
+                    curr = queue.take();
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+                try {
+                    writer.write(curr);
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
                 }
             }
 
             try {
-                Thread.sleep(SLEEP_PERIOD);
-            } catch (InterruptedException e) {
+                writer.flush();
+                writer.close();
+            } catch (IOException e) {
                 throw new RuntimeException(e);
             }
         });
@@ -44,12 +48,7 @@ public abstract class Printer {
     /**
      * Stop writing to ouput stream
      */
-    public void poison() {
-        try {
-            writer.flush();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+    public void flush() {
         running.set(false);
     }
 }
