@@ -1,1 +1,4 @@
 __pycache__/
+template_java/*.iml
+template_java/merdalog/*
+.idea/*
