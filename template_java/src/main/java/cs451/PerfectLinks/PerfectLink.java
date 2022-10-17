@@ -22,9 +22,11 @@ import java.util.function.Consumer;
 public class PerfectLink<T extends Serializable> {
     private static final int SENDER_COUNT = 1;
     private static final int MAX_SEND_TRIES = 200;
-    // TODO: use send window instead, add new packages in queue only if the sentCount - oldestPacketSend > MAX_HANDLING
+    /**
+     * using send window instead, adding new packages in queue only if the sentCount - min(handlingNow) < MAX_HANDLING
+     */
     private static final int MAX_HANDLING = 1_000;
-    private static final int RESEND_PAUSE = 100;
+    private static final int RESEND_PAUSE = 50;
 
     private final int myId;
     private final int port;
@@ -37,13 +39,17 @@ public class PerfectLink<T extends Serializable> {
     /**
      * Alway lock limitLock first
      */
-    private int handlingNow;
+    private final SortedSet<Integer> handlingNow = new TreeSet<>();
 
-    // private final PoisoningPriorityQueue<Sendable> senderQueue = new
-    // PoisoningPriorityQueue<>();
+
+    /**
+     * <b>always lock limitLock first</b>
+     * Number of packets inserted in the send queue
+     * Every new packet to be sent is given as id packetCount++
+     */
+    private int packetCount = 0;
     private final BlockingQueue<NetworkTypes.Sendable<T>> senderQueue = new ArrayBlockingQueue<>(2 * MAX_HANDLING);
     private final ConcurrentLinkedQueue<Sendable<T>> resendWaitingQueue = new ConcurrentLinkedQueue<>();
-    private final AtomicInteger sentCount = new AtomicInteger(); // All good assuming it doesn't overflow
     private final Set<Integer> confirmed = Collections.synchronizedSet(new HashSet<>());
     private final Set<ReceivedPacket> deliveredSet = Collections.synchronizedSet(new HashSet<>());
     private final Consumer<DataPacket<T>> deliver;
@@ -72,10 +78,6 @@ public class PerfectLink<T extends Serializable> {
         resendTimer.start();
     }
 
-    public int getPendingBastards() {
-        return senderQueue.size();
-    }
-
     /**
      * Add message to queue so that it's <b>eventually</b> sent
      * <br><b>unless the receiver is deemed dead</b>
@@ -86,19 +88,19 @@ public class PerfectLink<T extends Serializable> {
         limitLock.lock();
 
         try {
-            while (handlingNow >= MAX_HANDLING) {
+            while (packetCount - (handlingNow.isEmpty() ? 0 : handlingNow.first()) >= MAX_HANDLING) {
                 try {
                     nonFull.await();
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
             }
-            handlingNow++;
+            packetCount++;
+            handlingNow.add(packetCount);
         } finally {
             limitLock.unlock();
         }
-        boolean success = senderQueue.offer(new Sendable<>(new DataPacket<>(sentCount.getAndIncrement(), myId, content), to));
-        assert success;
+        senderQueue.offer(new Sendable<>(new DataPacket<>(packetCount, myId, content), to));
     }
 
     /**
@@ -127,10 +129,7 @@ public class PerfectLink<T extends Serializable> {
             } catch (InterruptedException e) {
                 logger.log("Resender routine stopped.");
             }
-//            while ((s = resendWaitingQueue.poll()) != null) {
-//                boolean success = senderQueue.offer(s);
-//                assert success;
-//            }
+
             while ((s = resendWaitingQueue.poll()) != null) {
                 senderQueue.offer(s);
             }
@@ -181,7 +180,10 @@ public class PerfectLink<T extends Serializable> {
                     confirmed.remove(se.n);
 
                     limitLock.lock();
-                    handlingNow--;
+//                    if (handlingNow.first() == se.n) { // This stupid log message is expensive
+//                        System.out.println("Window advanced");
+//                    }
+                    handlingNow.remove(se.n);
                     nonFull.signal();
                     limitLock.unlock();
                 }
@@ -202,12 +204,10 @@ public class PerfectLink<T extends Serializable> {
 
         @Override
         public void run() {
-            while (true) {
-                try {
-                    receiverRoutine();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
+            try {
+                receiverRoutine();
+            } catch (IOException e) {
+                e.printStackTrace();
             }
         }
 
