@@ -131,7 +131,7 @@ public class PerfectLink<T extends Serializable> {
 //                boolean success = senderQueue.offer(s);
 //                assert success;
 //            }
-            if ((s = resendWaitingQueue.poll()) != null) {
+            while ((s = resendWaitingQueue.poll()) != null) {
                 senderQueue.offer(s);
             }
         }
