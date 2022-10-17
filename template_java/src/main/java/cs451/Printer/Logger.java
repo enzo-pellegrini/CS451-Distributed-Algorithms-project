@@ -1,14 +1,22 @@
 package cs451.Printer;
 
-import java.io.BufferedWriter;
+import java.io.IOException;
 import java.io.OutputStreamWriter;
 
 public class Logger extends Printer {
-    public Logger() {
-        super(new BufferedWriter(new OutputStreamWriter(System.out)));
+    private final String prefix;
+    private int count;
+
+    public Logger(String prefix) {
+        super(new OutputStreamWriter(System.out));
+        this.prefix = prefix;
     }
 
-    public void println(String message) {
-        print(message + "\n");
+    public synchronized void log(String message) {
+        try {
+            println(prefix + "[" + ++count + "]: " + message);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 }

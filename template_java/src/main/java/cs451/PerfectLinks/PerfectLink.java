@@ -2,6 +2,7 @@ package cs451.PerfectLinks;
 
 import cs451.Parser.Host;
 import cs451.PerfectLinks.NetworkTypes.*;
+import cs451.Printer.Logger;
 
 import java.io.IOException;
 import java.io.Serializable;
@@ -12,7 +13,6 @@ import java.util.*;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
@@ -21,15 +21,16 @@ import java.util.function.Consumer;
 
 public class PerfectLink<T extends Serializable> {
     private static final int SENDER_COUNT = 1;
-    private static final int MAX_TRYCOUNT = 10;
+    private static final int MAX_SEND_TRIES = 200;
+    // TODO: use send window instead, add new packages in queue only if the sentCount - oldestPacketSend > MAX_HANDLING
     private static final int MAX_HANDLING = 1_000;
     private static final int RESEND_PAUSE = 100;
 
     private final int myId;
     private final int port;
     private final List<Host> hosts;
+    private final Logger logger = new Logger("PerfectLink");
 
-    private final AtomicBoolean running = new AtomicBoolean(true);
 
     private final Lock limitLock = new ReentrantLock();
     private final Condition nonFull = limitLock.newCondition();
@@ -96,7 +97,7 @@ public class PerfectLink<T extends Serializable> {
         } finally {
             limitLock.unlock();
         }
-        boolean success = senderQueue.offer(new Sendable<T>(new DataPacket<>(sentCount.getAndIncrement(), myId, content), to));
+        boolean success = senderQueue.offer(new Sendable<>(new DataPacket<>(sentCount.getAndIncrement(), myId, content), to));
         assert success;
     }
 
@@ -104,22 +105,34 @@ public class PerfectLink<T extends Serializable> {
      * Kill all sender and receiver threads
      * packets waiting to be sent are not sent
      */
-    public void poison() {
-        running.set(false);
-        // senderQueue.poison();
+    public void interruptAll() {
+        for (var senderThread : senderThreads) {
+            senderThread.interrupt();
+        }
+        receiverThread.interrupt();
+        resendTimer.interrupt();
+
+        try {
+            logger.flush();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private void resenderRoutine() {
         Sendable<T> s;
-        while (running.get()) {
+        while (true) {
             try {
                 Thread.sleep(RESEND_PAUSE);
             } catch (InterruptedException e) {
-                e.printStackTrace();
+                logger.log("Resender routine stopped.");
             }
-            while ((s = resendWaitingQueue.poll()) != null) {
-                boolean success = senderQueue.offer(s);
-                assert success;
+//            while ((s = resendWaitingQueue.poll()) != null) {
+//                boolean success = senderQueue.offer(s);
+//                assert success;
+//            }
+            if ((s = resendWaitingQueue.poll()) != null) {
+                senderQueue.offer(s);
             }
         }
     }
@@ -134,32 +147,24 @@ public class PerfectLink<T extends Serializable> {
 
         @Override
         public void run() {
-            // while (running.get()) {
             try {
                 senderRoutine();
-            } catch (Exception e) {
-                System.err.println("Sender thread " + ti + " crashed!");
+            } catch (InterruptedException e) {
+                logger.log("Sender thread " + ti + " stopped.");
+            } catch (IOException e) {
+                System.err.println("Sender thread crashed for IOException");
                 e.printStackTrace();
             }
-            // }
         }
 
         private void senderRoutine() throws InterruptedException, IOException {
             DatagramSocket s = new DatagramSocket();
 
-            while (running.get()) {
+            while (true) {
                 Sendable<T> se = senderQueue.take();
-//                Sendable<T> se;
-//                do {
-//                    se = senderQueue.poll();
-//                } while (se == null);
-
-                if (se == null) {
-                    break;
-                }
 
                 // TODO: notify ReliableChannel user that the receiving process has failed
-                if (se.tryCount < MAX_TRYCOUNT && !confirmed.contains(se.n)) {
+                if (se.tryCount < MAX_SEND_TRIES && !confirmed.contains(se.n)) {
                     byte[] buf = se.getSerializedMessage();
                     DatagramPacket p = new DatagramPacket(buf, buf.length, InetAddress.getByName(se.to.getIp()), se.to.getPort());
 
@@ -169,8 +174,8 @@ public class PerfectLink<T extends Serializable> {
 
                     se.tryCount++; // IMPORTANT
                     resendWaitingQueue.offer(se); // Possible problem: if this thread crashes, se will be lost
-                } else if (se.tryCount >= MAX_TRYCOUNT) {
-                    System.out.println("Dropped packet " + se.n);
+                } else if (se.tryCount >= MAX_SEND_TRIES) {
+                    logger.log("Dropped packet " + se.n);
                 } else {
                     // the packet is thrown away, can reduce memory usage now
                     confirmed.remove(se.n);
@@ -182,7 +187,7 @@ public class PerfectLink<T extends Serializable> {
                 }
             }
 
-            s.close();
+            // s.close();
         }
     }
 
@@ -197,7 +202,7 @@ public class PerfectLink<T extends Serializable> {
 
         @Override
         public void run() {
-            while (running.get()) {
+            while (true) {
                 try {
                     receiverRoutine();
                 } catch (IOException e) {
@@ -209,36 +214,33 @@ public class PerfectLink<T extends Serializable> {
         private void receiverRoutine() throws IOException {
             s = new DatagramSocket(port);
 
-            System.out.println("Listening on port " + port);
+            logger.log("Listening on port " + port);
 
-            try {
-                while (running.get()) {
-                    byte[] buff = new byte[512];
-                    DatagramPacket p = new DatagramPacket(buff, buff.length);
-                    s.receive(p);
+            while (true) {
+                byte[] buff = new byte[512];
+                DatagramPacket p = new DatagramPacket(buff, buff.length);
+                s.receive(p);
 
-                    Object received = Serialization.deserialize(buff);
+                Object received = Serialization.deserialize(buff);
 
-                    if (received instanceof AckPacket) {
-                        AckPacket ap = (AckPacket) received;
-                        confirmed.add(ap.n);
-//                        System.out.println("Received ack for packet " + ap.n);
-                    } else if (received instanceof NetworkTypes.DataPacket) {
-                        DataPacket dp = (DataPacket) received;
+                if (received instanceof AckPacket) {
+                    AckPacket ap = (AckPacket) received;
+                    confirmed.add(ap.n);
+//                    logger.log("Received ack for packet " + ap.n);
+                } else if (received instanceof NetworkTypes.DataPacket) {
+                    DataPacket dp = (DataPacket) received;
 
-                        sendAckForPacket(dp);
+                    sendAckForPacket(dp);
 
-                        if (!deliveredSet.contains(new ReceivedPacket(dp))) {
-                            deliveredSet.add(new ReceivedPacket(dp));
-                            deliver.accept(dp);
-                        }
-                    } else {
-                        throw new IOException();
+                    if (!deliveredSet.contains(new ReceivedPacket(dp))) {
+                        deliveredSet.add(new ReceivedPacket(dp));
+                        deliver.accept(dp);
                     }
+                } else {
+                    throw new IOException();
                 }
-            } finally {
-                s.close();
             }
+//            s.close();
         }
 
         private void sendAckForPacket(DataPacket dp) throws IOException {
