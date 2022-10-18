@@ -13,7 +13,6 @@ import java.util.*;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -157,45 +156,39 @@ public class PerfectLink<T extends Serializable> {
         }
 
         private void senderRoutine() throws InterruptedException, IOException {
-            DatagramSocket s = new DatagramSocket();
+            try (DatagramSocket s = new DatagramSocket()) {
+                while (true) {
+                    Sendable<T> se = senderQueue.take();
 
-            while (true) {
-                Sendable<T> se = senderQueue.take();
+                    // TODO: notify ReliableChannel user that the receiving process has failed
+                    if (se.tryCount < MAX_SEND_TRIES && !confirmed.contains(se.n)) {
+                        byte[] buf = se.getSerializedMessage();
+                        DatagramPacket p = new DatagramPacket(buf, buf.length, InetAddress.getByName(se.to.getIp()), se.to.getPort());
 
-                // TODO: notify ReliableChannel user that the receiving process has failed
-                if (se.tryCount < MAX_SEND_TRIES && !confirmed.contains(se.n)) {
-                    byte[] buf = se.getSerializedMessage();
-                    DatagramPacket p = new DatagramPacket(buf, buf.length, InetAddress.getByName(se.to.getIp()), se.to.getPort());
-
-                    s.send(p);
+                        s.send(p);
 
 //                    System.out.println("Sent " + se.message.data + " to port " + se.to.getPort());
 
-                    se.tryCount++; // IMPORTANT
-                    resendWaitingQueue.offer(se); // Possible problem: if this thread crashes, se will be lost
-                } else if (se.tryCount >= MAX_SEND_TRIES) {
-                    logger.log("Dropped packet " + se.n);
-                } else {
-                    // the packet is thrown away, can reduce memory usage now
-                    confirmed.remove(se.n);
+                        se.tryCount++; // IMPORTANT
+                        resendWaitingQueue.offer(se); // Possible problem: if this thread crashes, se will be lost
+                    } else if (se.tryCount >= MAX_SEND_TRIES) {
+                        logger.log("Dropped packet " + se.n);
+                    } else {
+                        // Don't need to keep track of confirmed packages anymore
+                        confirmed.remove(se.n);
 
-                    limitLock.lock();
-//                    if (handlingNow.first() == se.n) { // This stupid log message is expensive
-//                        System.out.println("Window advanced");
-//                    }
-                    handlingNow.remove(se.n);
-                    nonFull.signal();
-                    limitLock.unlock();
+                        limitLock.lock();
+                        handlingNow.remove(se.n);
+                        nonFull.signal();
+                        limitLock.unlock();
+                    }
                 }
             }
-
-            // s.close();
         }
     }
 
     class Receiver extends Thread {
         private int ti;
-        private DatagramSocket s;
 
         public Receiver(int ti) {
             super();
@@ -212,38 +205,38 @@ public class PerfectLink<T extends Serializable> {
         }
 
         private void receiverRoutine() throws IOException {
-            s = new DatagramSocket(port);
+            try (DatagramSocket s = new DatagramSocket(port)) {
 
-            logger.log("Listening on port " + port);
+                logger.log("Listening on port " + port);
 
-            while (true) {
-                byte[] buff = new byte[512];
-                DatagramPacket p = new DatagramPacket(buff, buff.length);
-                s.receive(p);
+                while (true) {
+                    byte[] buff = new byte[512];
+                    DatagramPacket p = new DatagramPacket(buff, buff.length);
+                    s.receive(p);
 
-                Object received = Serialization.deserialize(buff);
+                    Object received = Serialization.deserialize(buff);
 
-                if (received instanceof AckPacket) {
-                    AckPacket ap = (AckPacket) received;
-                    confirmed.add(ap.n);
-//                    logger.log("Received ack for packet " + ap.n);
-                } else if (received instanceof NetworkTypes.DataPacket) {
-                    DataPacket dp = (DataPacket) received;
+                    if (received instanceof AckPacket) {
+                        AckPacket ap = (AckPacket) received;
+                        confirmed.add(ap.n);
+//                        logger.log("Received ack for packet " + ap.n);
+                    } else if (received instanceof NetworkTypes.DataPacket) {
+                        DataPacket dp = (DataPacket) received;
 
-                    sendAckForPacket(dp);
+                        sendAckForPacket(s, dp);
 
-                    if (!deliveredSet.contains(new ReceivedPacket(dp))) {
-                        deliveredSet.add(new ReceivedPacket(dp));
-                        deliver.accept(dp);
+                        if (!deliveredSet.contains(new ReceivedPacket(dp))) {
+                            deliveredSet.add(new ReceivedPacket(dp));
+                            deliver.accept(dp);
+                        }
+                    } else {
+                        throw new IOException();
                     }
-                } else {
-                    throw new IOException();
                 }
             }
-//            s.close();
         }
 
-        private void sendAckForPacket(DataPacket dp) throws IOException {
+        private void sendAckForPacket(DatagramSocket s, DataPacket dp) throws IOException {
             byte[] buff = Serialization.serialize(new NetworkTypes.AckPacket(dp.n, myId));
             final Host dst = hosts.get(dp.from - 1); // TODO: maybe too great of an assumption?
             s.send(new DatagramPacket(buff, buff.length, InetAddress.getByName(dst.getIp()), dst.getPort()));
