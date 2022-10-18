@@ -19,6 +19,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 
 public class PerfectLink<T extends Serializable> {
+    private static final int MAX_MESSAGES_IN_PACKET = 8;
     private static final int SENDER_COUNT = 1;
 //    private static final int MAX_SEND_TRIES = 200;
     /**
@@ -36,13 +37,18 @@ public class PerfectLink<T extends Serializable> {
     private final Lock limitLock = new ReentrantLock();
     private final Condition nonFull = limitLock.newCondition();
     /**
-     * Alway lock limitLock first
+     * Alway lock <code>limitLock</code> first
      */
     private final SortedSet<Integer> handlingNow = new TreeSet<>();
+    /**
+     * For each host_id, list of packets waiting to be sent (up to MAX_MESSAGES_IN_PACKET)
+     * take <code>limitLock</code> before modifying the lists or adding new ones
+     */
+    private final List<List<T>> sendBuffer;
 
 
     /**
-     * <b>always lock limitLock first</b>
+     * <b>always lock <code>limitLock</code> first</b>
      * Number of packets inserted in the send queue
      * Every new packet to be sent is given as id packetCount++
      */
@@ -51,16 +57,18 @@ public class PerfectLink<T extends Serializable> {
     private final ConcurrentLinkedQueue<Sendable<T>> resendWaitingQueue = new ConcurrentLinkedQueue<>();
     private final Set<Integer> confirmed = Collections.synchronizedSet(new HashSet<>());
     private final Set<ReceivedPacket> deliveredSet = Collections.synchronizedSet(new HashSet<>());
-    private final Consumer<DataPacket<T>> deliver;
+    private final Consumer<ReceivedMessage<T>> deliver;
 
     private final Thread[] senderThreads = new Thread[SENDER_COUNT];
     private final Thread receiverThread;
     private final Thread resendTimer;
 
-    public PerfectLink(int myId, int port, List<Host> hosts, Consumer<DataPacket<T>> deliver) {
+    public PerfectLink(int myId, int port, List<Host> hosts, Consumer<ReceivedMessage<T>> deliver) {
         this.myId = myId;
         this.port = port;
         this.hosts = hosts;
+        this.sendBuffer = new ArrayList<>(hosts.size());
+        for (int i = 0; i < hosts.size(); i++) sendBuffer.add(new ArrayList<>(MAX_MESSAGES_IN_PACKET));
         this.deliver = deliver;
 
         // Start sender workers
@@ -79,7 +87,8 @@ public class PerfectLink<T extends Serializable> {
 
     /**
      * Add message to queue so that it's <b>eventually</b> sent
-     * <br><b>unless the receiver is deemed dead</b>
+     * Adds message to a buffer of MAX_MESSAGES_IN_PACKET packages, call <code>flushMessageBuffers</code>
+     * after calling <code>send</code> on all messages
      *
      * @param content message to be sent
      */
@@ -94,12 +103,48 @@ public class PerfectLink<T extends Serializable> {
                     e.printStackTrace();
                 }
             }
-            packetCount++;
-            handlingNow.add(packetCount);
+
+            List<T> buff = sendBuffer.get(to.getId() - 1);
+            assert (buff.size() < MAX_MESSAGES_IN_PACKET);   // It can't be MAX_MESSAGES_IN_PACKET if I always send when full
+
+            buff.add(content);
+
+            if (buff.size() == MAX_MESSAGES_IN_PACKET) {
+                Sendable<T> se = new Sendable<>(new DataPacket<>(++packetCount, myId, new ArrayList<>(buff)), to);
+                sendSendable(se);
+                buff.clear();
+            }
         } finally {
             limitLock.unlock();
         }
-        senderQueue.offer(new Sendable<>(new DataPacket<>(packetCount, myId, content), to));
+//        senderQueue.offer(new Sendable<>(new DataPacket<>(packetCount, myId, content), to));
+    }
+
+    public void flushMessageBuffers() {
+        limitLock.lock();
+
+        try {
+            for (int i = 0; i < hosts.size(); i++) {
+                List<T> buff = sendBuffer.get(i);
+                if (buff.size() > 0) {
+                    Sendable<T> se = new Sendable<>(new DataPacket<>(++packetCount, myId, new ArrayList<>(buff)), hosts.get(i));
+                    sendSendable(se);
+                    buff.clear();
+                }
+            }
+        } finally {
+            limitLock.unlock();
+        }
+    }
+
+    /**
+     * Add sendable to the sender Queue and update all related data structures
+     * Lock <code>limitLock</code> first
+     * @param se Sendable to be scheduled
+     */
+    private void sendSendable(Sendable<T> se) {
+        senderQueue.offer(se);
+        handlingNow.add(se.n);
     }
 
     /**
@@ -167,7 +212,7 @@ public class PerfectLink<T extends Serializable> {
 
                         s.send(p);
 
-//                    System.out.println("Sent " + se.message.data + " to port " + se.to.getPort());
+//                        System.out.println("Sent " + se.message.data + " to port " + se.to.getPort());
 
                         se.tryCount++;
                         resendWaitingQueue.offer(se); // Possible problem: if this thread crashes, se will be lost
@@ -217,7 +262,7 @@ public class PerfectLink<T extends Serializable> {
                     if (received instanceof AckPacket) {
                         AckPacket ap = (AckPacket) received;
                         confirmed.add(ap.n);
-//                        logger.log("Received ack for packet " + ap.n);
+//                        System.out.println("Received ack for packet " + ap.n);
                     } else if (received instanceof NetworkTypes.DataPacket) {
                         DataPacket dp = (DataPacket) received;
 
@@ -225,7 +270,10 @@ public class PerfectLink<T extends Serializable> {
 
                         if (!deliveredSet.contains(new ReceivedPacket(dp))) {
                             deliveredSet.add(new ReceivedPacket(dp));
-                            deliver.accept(dp);
+                            for (Object m : dp.data) {
+                                T message = (T) m;
+                                deliver.accept(new ReceivedMessage<>(message, dp.from));
+                            }
                         }
                     } else {
                         throw new IOException();

@@ -88,6 +88,7 @@ public class Main {
                 }
             }
         }
+        rc.flushMessageBuffers();
 
         // After a process finishes broadcasting,
         // it waits forever for the delivery of messages.

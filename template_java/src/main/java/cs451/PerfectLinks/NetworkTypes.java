@@ -3,17 +3,18 @@ package cs451.PerfectLinks;
 import cs451.Parser.Host;
 
 import java.io.Serializable;
+import java.util.List;
 
 /**
  * Types that get sent through UDP (serializable)
  */
 public class NetworkTypes {
-    public static class DataPacket<T extends Serializable> implements Serializable {
+    static class DataPacket<T extends Serializable> implements Serializable {
         public final int n;
         public final int from;
-        public final T data;
+        public final List<T> data;
 
-        public DataPacket(int n, int from, T data) {
+        public DataPacket(int n, int from, List<T> data) {
             this.n = n;
             this.from = from;
             this.data = data;
@@ -124,6 +125,16 @@ public class NetworkTypes {
             } else {
                 return this.n < o.n ? +1 : -1;
             }
+        }
+    }
+
+    public static class ReceivedMessage<T> { // TODO: do messages have to be numbered (per project specification)?
+        public final T data;
+        public final int from;
+
+        public ReceivedMessage(T data, int from) {
+            this.data = data;
+            this.from = from;
         }
     }
 }
