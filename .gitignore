@@ -1,6 +1,8 @@
 __pycache__/
 template_java/*.iml
 template_java/merdalog/*
+template_java/target/*
+template_java/bin/*
 .idea/*
 example/*
 Submissions

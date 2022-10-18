@@ -20,7 +20,7 @@ import java.util.function.Consumer;
 
 public class PerfectLink<T extends Serializable> {
     private static final int SENDER_COUNT = 1;
-    private static final int MAX_SEND_TRIES = 200;
+//    private static final int MAX_SEND_TRIES = 200;
     /**
      * using send window instead, adding new packages in queue only if the sentCount - min(handlingNow) < MAX_HANDLING
      */
@@ -161,7 +161,7 @@ public class PerfectLink<T extends Serializable> {
                     Sendable<T> se = senderQueue.take();
 
                     // TODO: notify ReliableChannel user that the receiving process has failed
-                    if (se.tryCount < MAX_SEND_TRIES && !confirmed.contains(se.n)) {
+                    if (!confirmed.contains(se.n)) {
                         byte[] buf = se.getSerializedMessage();
                         DatagramPacket p = new DatagramPacket(buf, buf.length, InetAddress.getByName(se.to.getIp()), se.to.getPort());
 
@@ -169,10 +169,8 @@ public class PerfectLink<T extends Serializable> {
 
 //                    System.out.println("Sent " + se.message.data + " to port " + se.to.getPort());
 
-                        se.tryCount++; // IMPORTANT
+                        se.tryCount++;
                         resendWaitingQueue.offer(se); // Possible problem: if this thread crashes, se will be lost
-                    } else if (se.tryCount >= MAX_SEND_TRIES) {
-                        logger.log("Dropped packet " + se.n);
                     } else {
                         // Don't need to keep track of confirmed packages anymore
                         confirmed.remove(se.n);
