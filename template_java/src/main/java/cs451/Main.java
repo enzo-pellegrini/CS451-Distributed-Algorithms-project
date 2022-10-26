@@ -91,8 +91,8 @@ public class Main {
         for (PerfectLinksConfigParser.ConfigEntry ce : parser.configEntries()) {
             if (parser.myId() != ce.getDstProcess()) {
                 for (int i = 0; i < ce.getNumMessages(); i++) {
-                    outputWriter.broadcasted(messageNumber);
-                    rc.send(++messageNumber, parser.hosts().get(ce.getDstProcess() - 1));
+                    outputWriter.broadcasted(++messageNumber);
+                    rc.send(messageNumber, parser.hosts().get(ce.getDstProcess() - 1));
                 }
             }
         }

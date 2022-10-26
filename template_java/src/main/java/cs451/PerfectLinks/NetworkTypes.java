@@ -8,11 +8,18 @@ import java.util.List;
  * Types that get sent through UDP (serializable)
  */
 public class NetworkTypes {
-    static abstract class NetworkPacket {}
-    static class DataPacket<T> extends NetworkPacket {
+    static abstract class NetworkPacket<T> {
+        public abstract int getN();
+    }
+    static class DataPacket<T> extends NetworkPacket<T> {
         public final int n;
         public final int from;
         public final List<T> data;
+
+        @Override
+        public int getN() {
+            return n;
+        }
 
         public DataPacket(int n, int from, List<T> data) {
             this.n = n;
@@ -50,6 +57,10 @@ public class NetworkTypes {
         public final int n;
         public final int receiver_id;
 
+        @Override
+        public int getN() {
+            return n;
+        }
         public AckPacket(int n, int receiver_id) {
             this.n = n;
             this.receiver_id = receiver_id;
@@ -99,12 +110,12 @@ public class NetworkTypes {
         public final int n;
         public final Host to;
         public int tryCount = 0;
-        public DataPacket<T> message;
+        public NetworkPacket message;
 
         private byte[] buff;
 
-        public Sendable(DataPacket<T> message, Host to) {
-            this.n = message.n;
+        public Sendable(NetworkPacket<T> message, Host to) {
+            this.n = message.getN();
             this.message = message;
             this.to = to;
         }

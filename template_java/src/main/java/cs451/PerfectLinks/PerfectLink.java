@@ -9,9 +9,7 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.util.*;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.*;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -26,7 +24,7 @@ public class PerfectLink<T> {
     /**
      * using send window instead, adding new packages in queue only if the sentCount - min(handlingNow) < MAX_HANDLING
      */
-    private static final int MAX_HANDLING = 10_000;
+    private static final int MAX_HANDLING = 2_000;
 
     /**
      * Multiplying factor of the exponential backoff algorithm
@@ -36,11 +34,11 @@ public class PerfectLink<T> {
     /**
      * If the average of the sentCount of the values in the resend buffer is lower than this, decrement the resendPause
      */
-    private static final double BACKOFF_DECREASE_UPPERBOUND = 1.2;
+    private static final double BACKOFF_DECREASE_UPPERBOUND = 1.1;
     /**
      * If the average of the sentCount of the values in the resend buffer is higher than this, increment the resendPause
      */
-    private static final double BACKOFF_INCREASE_LOWERBOUND = 5;
+    private static final double BACKOFF_INCREASE_LOWERBOUND = 1.5;
     /**
      * Minimum value the resend pause can assume
      */
@@ -66,7 +64,7 @@ public class PerfectLink<T> {
      * time to wait before rensending the packets waiting to be resent
      * follows exponential backoff
      */
-    private int currentResendPause = 10;
+    private int currentResendPause = 50;
     /**
      * For each host_id, list of packets waiting to be sent (up to MAX_MESSAGES_IN_PACKET)
      * take <code>limitLock</code> before modifying the lists or adding new ones
@@ -80,7 +78,7 @@ public class PerfectLink<T> {
      * Every new packet to be sent is given as id packetCount++
      */
     private int packetCount = 0;
-    private final BlockingQueue<NetworkTypes.Sendable<T>> senderQueue = new ArrayBlockingQueue<>(2 * MAX_HANDLING);
+    private final LinkedBlockingDeque<NetworkTypes.Sendable<T>> senderQueue = new LinkedBlockingDeque<>();
     private final ConcurrentLinkedQueue<Sendable<T>> resendWaitingQueue = new ConcurrentLinkedQueue<>();
     private final Set<Integer> confirmed = Collections.synchronizedSet(new HashSet<>());
     private final Set<ReceivedPacket> deliveredSet = Collections.synchronizedSet(new HashSet<>());
@@ -268,16 +266,25 @@ public class PerfectLink<T> {
                 while (true) {
                     Sendable<T> se = senderQueue.take();
 
+                    byte[] buf;
+                    boolean isAck = true;
                     // prepare network packet
-                    byte[] buf = serializer.serialize(se.message);
+                    if (se.message instanceof DataPacket) {
+                        buf = serializer.serialize((DataPacket)se.message);
+                        isAck = false;
+                    } else {
+                        buf = serializer.serialize((AckPacket)se.message);
+                    }
                     DatagramPacket p = new DatagramPacket(buf, buf.length, InetAddress.getByName(se.to.getIp()), se.to.getPort());
 
                     // send
                     s.send(p);
 
-                    // increment tryCount and put on resendQueue
-                    se.tryCount++;
-                    resendWaitingQueue.offer(se); // Possible problem: if this thread crashes, se will be lost
+                    if (!isAck) {
+                        // increment tryCount and put on resendQueue
+                        se.tryCount++;
+                        resendWaitingQueue.offer(se); // Possible problem: if this thread crashes, se will be lost
+                    }
                 }
             }
         }
@@ -332,9 +339,12 @@ public class PerfectLink<T> {
         }
 
         private void sendAckForPacket(DatagramSocket s, DataPacket<T> dp) throws IOException {
-            byte[] buff = serializer.serialize(new NetworkTypes.AckPacket(dp.n, myId));
             final Host dst = hosts.get(dp.from - 1); // TODO: maybe too great of an assumption?
-            s.send(new DatagramPacket(buff, buff.length, InetAddress.getByName(dst.getIp()), dst.getPort()));
+
+            Sendable<T> se = new Sendable(new AckPacket(dp.n, myId), dst);
+            senderQueue.addFirst(se);
+
+//            System.out.println("sending ack to " + se.to.getId());
         }
     }
 }
