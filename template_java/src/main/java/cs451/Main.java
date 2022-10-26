@@ -91,11 +91,12 @@ public class Main {
         for (PerfectLinksConfigParser.ConfigEntry ce : parser.configEntries()) {
             if (parser.myId() != ce.getDstProcess()) {
                 for (int i = 0; i < ce.getNumMessages(); i++) {
-                    rc.send(++messageNumber, parser.hosts().get(ce.getDstProcess() - 1));
                     outputWriter.broadcasted(messageNumber);
+                    rc.send(++messageNumber, parser.hosts().get(ce.getDstProcess() - 1));
                 }
             }
         }
+        System.out.println("I finished sending?");
         rc.flushMessageBuffers();
 
         // After a process finishes broadcasting,
