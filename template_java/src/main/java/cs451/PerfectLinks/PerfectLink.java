@@ -8,6 +8,7 @@ import java.io.Serializable;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
+import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
@@ -15,7 +16,9 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 public class PerfectLink<T extends Serializable> {
     private static final int MAX_MESSAGES_IN_PACKET = 8;
@@ -24,8 +27,8 @@ public class PerfectLink<T extends Serializable> {
     /**
      * using send window instead, adding new packages in queue only if the sentCount - min(handlingNow) < MAX_HANDLING
      */
-    private static final int MAX_HANDLING = 1_000;
-    private static final int RESEND_PAUSE = 40;
+    private static final int MAX_HANDLING = 10_000;
+    private static final int RESEND_PAUSE = 10;
 
     private final int myId;
     private final int port;
@@ -56,15 +59,18 @@ public class PerfectLink<T extends Serializable> {
     private final Set<Integer> confirmed = Collections.synchronizedSet(new HashSet<>());
     private final Set<ReceivedPacket> deliveredSet = Collections.synchronizedSet(new HashSet<>());
     private final Consumer<ReceivedMessage<T>> deliver;
+    private final MSerializer<T> serializer;
 
     private final Thread[] senderThreads = new Thread[SENDER_COUNT];
     private final Thread receiverThread;
     private final Thread resendTimer;
 
-    public PerfectLink(int myId, int port, List<Host> hosts, Consumer<ReceivedMessage<T>> deliver) {
+    public PerfectLink(int myId, int port, List<Host> hosts, Consumer<ReceivedMessage<T>> deliver,
+                       BiConsumer<T, ByteBuffer> messageSerializer, Function<ByteBuffer, T> messageDeserializer, int messageSize) {
         this.myId = myId;
         this.port = port;
         this.hosts = hosts;
+        this.serializer = new MSerializer<>(messageSerializer, messageDeserializer, messageSize);
         this.sendBuffer = new ArrayList<>(hosts.size());
         for (int i = 0; i < hosts.size(); i++) sendBuffer.add(new ArrayList<>(MAX_MESSAGES_IN_PACKET));
         this.deliver = deliver;
@@ -199,7 +205,7 @@ public class PerfectLink<T extends Serializable> {
 
                     // TODO: notify ReliableChannel user that the receiving process has failed
                     if (!confirmed.contains(se.n)) {
-                        byte[] buf = se.getSerializedMessage();
+                        byte[] buf = serializer.serialize(se.message); // TODO: cache this?
                         DatagramPacket p = new DatagramPacket(buf, buf.length, InetAddress.getByName(se.to.getIp()), se.to.getPort());
 
                         s.send(p);
@@ -249,14 +255,12 @@ public class PerfectLink<T extends Serializable> {
                     DatagramPacket p = new DatagramPacket(buff, buff.length);
                     s.receive(p);
 
-                    Object received = Serialization.deserialize(buff);
-
-                    if (received instanceof AckPacket) {
-                        AckPacket ap = (AckPacket) received;
+                    if (!serializer.isDatapacket(buff)) {
+                        AckPacket ap = serializer.deserializeAckPacket(buff);
                         confirmed.add(ap.n);
 //                        System.out.println("Received ack for packet " + ap.n);
-                    } else if (received instanceof NetworkTypes.DataPacket) {
-                        DataPacket dp = (DataPacket) received;
+                    } else {
+                        DataPacket<T> dp = serializer.deserializeDataPacket(buff);
 
                         sendAckForPacket(s, dp);
 
@@ -267,15 +271,13 @@ public class PerfectLink<T extends Serializable> {
                                 deliver.accept(new ReceivedMessage<>(message, dp.from));
                             }
                         }
-                    } else {
-                        throw new IOException();
                     }
                 }
             }
         }
 
-        private void sendAckForPacket(DatagramSocket s, DataPacket dp) throws IOException {
-            byte[] buff = Serialization.serialize(new NetworkTypes.AckPacket(dp.n, myId));
+        private void sendAckForPacket(DatagramSocket s, DataPacket<T> dp) throws IOException {
+            byte[] buff = serializer.serialize(new NetworkTypes.AckPacket(dp.n, myId));
             final Host dst = hosts.get(dp.from - 1); // TODO: maybe too great of an assumption?
             s.send(new DatagramPacket(buff, buff.length, InetAddress.getByName(dst.getIp()), dst.getPort()));
         }

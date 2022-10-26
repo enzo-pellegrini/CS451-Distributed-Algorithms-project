@@ -3,10 +3,12 @@ package cs451;
 import cs451.Parser.Host;
 import cs451.Parser.PerfectLinksConfigParser;
 import cs451.Parser.PerfectLinksParser;
+import cs451.PerfectLinks.MSerializer;
 import cs451.PerfectLinks.PerfectLink;
 import cs451.Printer.OutputWriter;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.time.Instant;
 
 public class Main {
@@ -74,7 +76,13 @@ public class Main {
         }
 
         rc = new PerfectLink<>(parser.myId(), parser.hosts().get(parser.myId() - 1).getPort(), parser.hosts(),
-                packet -> outputWriter.delivered(packet.from, packet.data));
+                packet -> outputWriter.delivered(packet.from, packet.data),
+                (message, bb) -> {
+                    bb.putInt(message);
+                },
+                ByteBuffer::getInt,
+                4
+        );
 
         System.out.println("Broadcasting and delivering messages...\n");
 
