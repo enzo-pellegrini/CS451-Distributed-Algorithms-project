@@ -30,7 +30,10 @@ public class PerfectLink<T extends Serializable> {
     /**
      * Multiplying factor of the exponential backoff algorithm
      */
-    private static final double BACKOFF_BASE = 1.2;
+    private static final double BACKOFF_BASE_UP = 1.2;
+    private static final int BACKOFF_SUM_UP = 20;
+    private static final double BACKOFF_BASE_DOWN = 2;
+    private static final int BACKOFF_SUM_DOWN = 40;
     /**
      * If the average of the sentCount of the values in the resend buffer is lower than this, decrement the resendPause
      */
@@ -38,7 +41,7 @@ public class PerfectLink<T extends Serializable> {
     /**
      * If the average of the sentCount of the values in the resend buffer is higher than this, increment the resendPause
      */
-    private static final double BACKOFF_INCREASE_LOWERBOUND = 5;
+    private static final double BACKOFF_INCREASE_LOWERBOUND = 10;
     /**
      * Minimum value the resend pause can assume
      */
@@ -59,7 +62,7 @@ public class PerfectLink<T extends Serializable> {
     /**
      * Alway lock <code>limitLock</code> first
      */
-    private final SortedSet<Integer> handlingNow = new TreeSet<>();
+    private int  handlingNow = 0;
 
     /**
      * time to wait before rensending the packets waiting to be resent
@@ -122,7 +125,7 @@ public class PerfectLink<T extends Serializable> {
         limitLock.lock();
 
         try {
-            while (packetCount - (handlingNow.isEmpty() ? 0 : handlingNow.first()) >= MAX_HANDLING) {
+            while (handlingNow >= MAX_HANDLING) {
                 try {
                     nonFull.await();
                 } catch (InterruptedException e) {
@@ -171,7 +174,7 @@ public class PerfectLink<T extends Serializable> {
      */
     private void sendSendable(Sendable<T> se) {
         senderQueue.offer(se);
-        handlingNow.add(se.n);
+        handlingNow++;
     }
 
     /**
@@ -215,9 +218,12 @@ public class PerfectLink<T extends Serializable> {
                     // The upper level can now add more packages
                     // TODO: why not do this when the ack is received?
                     limitLock.lock();
-                    handlingNow.remove(s.n);
-                    nonFull.signal();
-                    limitLock.unlock();
+                    try {
+                        handlingNow--;
+                        nonFull.signal();
+                    } finally {
+                        limitLock.unlock();
+                    }
                 } else {
                     senderQueue.offer(s);
 
@@ -228,17 +234,17 @@ public class PerfectLink<T extends Serializable> {
             double avgSentCount = sentCountSum / packetCount;
             if (packetCount > MAX_HANDLING - (MAX_HANDLING / 5)) { // The algorithm is quite unstable when the queue is empty
                 if (avgSentCount > BACKOFF_INCREASE_LOWERBOUND) {
-                    currentResendPause = Math.min(MAX_RESENDPAUSE, (int) (currentResendPause * BACKOFF_BASE));
+                    currentResendPause = Math.min(MAX_RESENDPAUSE, (int) (currentResendPause * BACKOFF_BASE_UP));
 //                    if (currentResendPause > 40) {
                         System.out.println("Incrementing backoff delay to " + currentResendPause);
 //                    }
                 } else if (avgSentCount < BACKOFF_DECREASE_UPPERBOUND) {
-                    currentResendPause = Math.max(MIN_RESENDPAUSE, (int) (currentResendPause / BACKOFF_BASE));
+                    currentResendPause = Math.max(MIN_RESENDPAUSE, (int) (currentResendPause / BACKOFF_BASE_DOWN));
                     if (currentResendPause > 40) {
                         System.out.println("Decrementing backoff delay to " + currentResendPause);
                     }
                 } else {
-                    System.out.println("Changing nothing");
+//                    System.out.println("Changing nothing");
                 }
             }
         }
