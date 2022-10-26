@@ -4,7 +4,6 @@ import cs451.Parser.Host;
 import cs451.PerfectLinks.NetworkTypes.*;
 
 import java.io.IOException;
-import java.io.Serializable;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
@@ -20,7 +19,7 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-public class PerfectLink<T extends Serializable> {
+public class PerfectLink<T> {
     private static final int MAX_MESSAGES_IN_PACKET = 8;
     private static final int SENDER_COUNT = 1;
 //    private static final int MAX_SEND_TRIES = 200;
@@ -28,13 +27,12 @@ public class PerfectLink<T extends Serializable> {
      * using send window instead, adding new packages in queue only if the sentCount - min(handlingNow) < MAX_HANDLING
      */
     private static final int MAX_HANDLING = 10_000;
-    private static final int RESEND_PAUSE = 10;
 
     /**
      * Multiplying factor of the exponential backoff algorithm
      */
     private static final double BACKOFF_BASE_UP = 1.2;
-    private static final double BACKOFF_BASE_DOWN = 2;
+    private static final double BACKOFF_BASE_DOWN = 1.5;
     /**
      * If the average of the sentCount of the values in the resend buffer is lower than this, decrement the resendPause
      */
@@ -42,11 +40,11 @@ public class PerfectLink<T extends Serializable> {
     /**
      * If the average of the sentCount of the values in the resend buffer is higher than this, increment the resendPause
      */
-    private static final double BACKOFF_INCREASE_LOWERBOUND = 10;
+    private static final double BACKOFF_INCREASE_LOWERBOUND = 5;
     /**
      * Minimum value the resend pause can assume
      */
-    private static final int MIN_RESENDPAUSE = 20;
+    private static final int MIN_RESENDPAUSE = 10;
     /**
      * Maximum value the resend pause can assume
      */
@@ -68,7 +66,7 @@ public class PerfectLink<T extends Serializable> {
      * time to wait before rensending the packets waiting to be resent
      * follows exponential backoff
      */
-    private int currentResendPause = 40;
+    private int currentResendPause = 10;
     /**
      * For each host_id, list of packets waiting to be sent (up to MAX_MESSAGES_IN_PACKET)
      * take <code>limitLock</code> before modifying the lists or adding new ones
@@ -149,7 +147,6 @@ public class PerfectLink<T extends Serializable> {
         } finally {
             limitLock.unlock();
         }
-//        senderQueue.offer(new Sendable<>(new DataPacket<>(packetCount, myId, content), to));
     }
 
     public void flushMessageBuffers() {
@@ -228,16 +225,16 @@ public class PerfectLink<T extends Serializable> {
 
             // Exponential backoff logic
             double avgSentCount = sentCountSum / packetCount;
-            if (packetCount > MAX_HANDLING - (MAX_HANDLING / 5)) { // The algorithm is quite unstable when the queue is empty
+            if (packetCount > 2000) { // The algorithm is quite unstable when the queue is empty
                 if (avgSentCount > BACKOFF_INCREASE_LOWERBOUND) {
                     currentResendPause = Math.min(MAX_RESENDPAUSE, (int) (currentResendPause * BACKOFF_BASE_UP));
 //                    if (currentResendPause > 40) {
-                        System.out.println("[" + myId + "] Incrementing backoff delay to " + currentResendPause);
+                    System.out.println("[" + myId + "] Incrementing backoff delay to " + currentResendPause + ", sent " + this.packetCount);
 //                    }
                 } else if (avgSentCount < BACKOFF_DECREASE_UPPERBOUND) {
                     currentResendPause = Math.max(MIN_RESENDPAUSE, (int) (currentResendPause / BACKOFF_BASE_DOWN));
-                    if (currentResendPause > 40) {
-                        System.out.println("[" + myId + "] Decrementing backoff delay to " + currentResendPause);
+                    if (currentResendPause > MIN_RESENDPAUSE) {
+                        System.out.println("[" + myId + "] Decrementing backoff delay to " + currentResendPause + ", sent " + this.packetCount);
                     }
                 } else {
 //                    System.out.println("Changing nothing");
@@ -272,12 +269,8 @@ public class PerfectLink<T extends Serializable> {
                     Sendable<T> se = senderQueue.take();
 
                     // prepare network packet
-                    byte[] buf = se.getSerializedMessage();
+                    byte[] buf = serializer.serialize(se.message);
                     DatagramPacket p = new DatagramPacket(buf, buf.length, InetAddress.getByName(se.to.getIp()), se.to.getPort());
-                    // TODO: notify ReliableChannel user that the receiving process has failed
-                    if (!confirmed.contains(se.n)) {
-                        byte[] buf = serializer.serialize(se.message); // TODO: cache this?
-                        DatagramPacket p = new DatagramPacket(buf, buf.length, InetAddress.getByName(se.to.getIp()), se.to.getPort());
 
                     // send
                     s.send(p);

@@ -4,6 +4,7 @@ template_java/merdalog/*
 template_java/target/*
 template_java/bin/*
 .idea/*
+.idea
 example/*
 Submissions
 /**/.DS_Store

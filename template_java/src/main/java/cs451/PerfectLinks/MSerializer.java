@@ -9,7 +9,7 @@ import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
-public class MSerializer<T extends Serializable> {
+public class MSerializer<T> {
     private final BiConsumer<T, ByteBuffer> messageSerializer;
     private final Function<ByteBuffer, T> messageDeserializer;
     private final int messageSize; // Upper bound on size of single message

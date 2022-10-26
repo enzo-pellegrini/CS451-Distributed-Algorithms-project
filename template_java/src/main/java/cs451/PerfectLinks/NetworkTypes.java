@@ -2,14 +2,14 @@ package cs451.PerfectLinks;
 
 import cs451.Parser.Host;
 
-import java.io.Serializable;
 import java.util.List;
 
 /**
  * Types that get sent through UDP (serializable)
  */
 public class NetworkTypes {
-    static class DataPacket<T extends Serializable> implements Serializable {
+    static abstract class NetworkPacket {}
+    static class DataPacket<T> extends NetworkPacket {
         public final int n;
         public final int from;
         public final List<T> data;
@@ -46,7 +46,7 @@ public class NetworkTypes {
         }
     }
 
-    static class AckPacket implements Serializable {
+    static class AckPacket extends NetworkPacket {
         public final int n;
         public final int receiver_id;
 
@@ -95,7 +95,7 @@ public class NetworkTypes {
         }
     }
 
-    static class Sendable<T extends Serializable> implements Comparable<Sendable> {
+    static class Sendable<T> {
         public final int n;
         public final Host to;
         public int tryCount = 0;
@@ -107,24 +107,6 @@ public class NetworkTypes {
             this.n = message.n;
             this.message = message;
             this.to = to;
-        }
-
-        public byte[] getSerializedMessage() {
-            if (buff == null) {
-                buff = Serialization.serialize(message);
-            }
-            return buff;
-        }
-
-        @Override
-        public int compareTo(Sendable o) {
-            if (this.tryCount > o.tryCount) {
-                return -1;
-            } else if (this.tryCount < o.tryCount) {
-                return 1;
-            } else {
-                return this.n < o.n ? +1 : -1;
-            }
         }
     }
 
