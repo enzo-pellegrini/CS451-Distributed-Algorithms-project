@@ -236,12 +236,12 @@ public class PerfectLink<T extends Serializable> {
                 if (avgSentCount > BACKOFF_INCREASE_LOWERBOUND) {
                     currentResendPause = Math.min(MAX_RESENDPAUSE, (int) (currentResendPause * BACKOFF_BASE_UP));
 //                    if (currentResendPause > 40) {
-                        System.out.println("Incrementing backoff delay to " + currentResendPause);
+                        System.out.println("[" + myId + "] Incrementing backoff delay to " + currentResendPause);
 //                    }
                 } else if (avgSentCount < BACKOFF_DECREASE_UPPERBOUND) {
                     currentResendPause = Math.max(MIN_RESENDPAUSE, (int) (currentResendPause / BACKOFF_BASE_DOWN));
                     if (currentResendPause > 40) {
-                        System.out.println("Decrementing backoff delay to " + currentResendPause);
+                        System.out.println("[" + myId + "] Decrementing backoff delay to " + currentResendPause);
                     }
                 } else {
 //                    System.out.println("Changing nothing");
