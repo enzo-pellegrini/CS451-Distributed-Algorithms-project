@@ -2,7 +2,6 @@ package cs451.PerfectLinks;
 
 import cs451.Parser.Host;
 import cs451.PerfectLinks.NetworkTypes.*;
-import cs451.Printer.Logger;
 
 import java.io.IOException;
 import java.io.Serializable;
@@ -31,7 +30,6 @@ public class PerfectLink<T extends Serializable> {
     private final int myId;
     private final int port;
     private final List<Host> hosts;
-    private final Logger logger = new Logger("PerfectLink");
 
 
     private final Lock limitLock = new ReentrantLock();
@@ -157,12 +155,6 @@ public class PerfectLink<T extends Serializable> {
         }
         receiverThread.interrupt();
         resendTimer.interrupt();
-
-        try {
-            logger.flush();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
     }
 
     private void resenderRoutine() {
@@ -171,7 +163,7 @@ public class PerfectLink<T extends Serializable> {
             try {
                 Thread.sleep(RESEND_PAUSE);
             } catch (InterruptedException e) {
-                logger.log("Resender routine stopped.");
+                System.out.println("Resender routine stopped.");
             }
 
             while ((s = resendWaitingQueue.poll()) != null) {
@@ -193,7 +185,7 @@ public class PerfectLink<T extends Serializable> {
             try {
                 senderRoutine();
             } catch (InterruptedException e) {
-                logger.log("Sender thread " + ti + " stopped.");
+                System.out.println("Sender thread " + ti + " stopped.");
             } catch (IOException e) {
                 System.err.println("Sender thread crashed for IOException");
                 e.printStackTrace();
@@ -250,7 +242,7 @@ public class PerfectLink<T extends Serializable> {
         private void receiverRoutine() throws IOException {
             try (DatagramSocket s = new DatagramSocket(port)) {
 
-                logger.log("Listening on port " + port);
+                System.out.println("Listening on port " + port);
 
                 while (true) {
                     byte[] buff = new byte[512];
