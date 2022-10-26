@@ -26,7 +26,27 @@ public class PerfectLink<T extends Serializable> {
      * using send window instead, adding new packages in queue only if the sentCount - min(handlingNow) < MAX_HANDLING
      */
     private static final int MAX_HANDLING = 1_000;
-    private static final int RESEND_PAUSE = 50;
+
+    /**
+     * Multiplying factor of the exponential backoff algorithm
+     */
+    private static final double BACKOFF_BASE = 1.2;
+    /**
+     * If the average of the sentCount of the values in the resend buffer is lower than this, decrement the resendPause
+     */
+    private static final double BACKOFF_DECREASE_UPPERBOUND = 1.2;
+    /**
+     * If the average of the sentCount of the values in the resend buffer is higher than this, increment the resendPause
+     */
+    private static final double BACKOFF_INCREASE_LOWERBOUND = 5;
+    /**
+     * Minimum value the resend pause can assume
+     */
+    private static final int MIN_RESENDPAUSE = 40;
+    /**
+     * Maximum value the resend pause can assume
+     */
+    private static final int MAX_RESENDPAUSE = 1000;
 
     private final int myId;
     private final int port;
@@ -40,6 +60,12 @@ public class PerfectLink<T extends Serializable> {
      * Alway lock <code>limitLock</code> first
      */
     private final SortedSet<Integer> handlingNow = new TreeSet<>();
+
+    /**
+     * time to wait before rensending the packets waiting to be resent
+     * follows exponential backoff
+     */
+    private int currentResendPause = 40;
     /**
      * For each host_id, list of packets waiting to be sent (up to MAX_MESSAGES_IN_PACKET)
      * take <code>limitLock</code> before modifying the lists or adding new ones
@@ -140,6 +166,7 @@ public class PerfectLink<T extends Serializable> {
     /**
      * Add sendable to the sender Queue and update all related data structures
      * Lock <code>limitLock</code> first
+     *
      * @param se Sendable to be scheduled
      */
     private void sendSendable(Sendable<T> se) {
@@ -165,17 +192,54 @@ public class PerfectLink<T extends Serializable> {
         }
     }
 
+    private int logTryCount = 0;
     private void resenderRoutine() {
         Sendable<T> s;
         while (true) {
             try {
-                Thread.sleep(RESEND_PAUSE);
+                Thread.sleep(currentResendPause);
             } catch (InterruptedException e) {
-                logger.log("Resender routine stopped.");
+                System.out.println("Resender routine stopped.");
             }
 
+            int packetCount = 0;
+            double sentCountSum = 0;
             while ((s = resendWaitingQueue.poll()) != null) {
-                senderQueue.offer(s);
+                // gather statistics for incremental backoff
+                packetCount++;
+                sentCountSum += s.tryCount;
+
+                if (confirmed.contains(s.n)) {
+                    confirmed.remove(s.n); // No need to keep track of this package anymore
+
+                    // The upper level can now add more packages
+                    // TODO: why not do this when the ack is received?
+                    limitLock.lock();
+                    handlingNow.remove(s.n);
+                    nonFull.signal();
+                    limitLock.unlock();
+                } else {
+                    senderQueue.offer(s);
+
+                }
+            }
+
+            // Exponential backoff logic
+            double avgSentCount = sentCountSum / packetCount;
+            if (packetCount > MAX_HANDLING - (MAX_HANDLING / 5)) { // The algorithm is quite unstable when the queue is empty
+                if (avgSentCount > BACKOFF_INCREASE_LOWERBOUND) {
+                    currentResendPause = Math.min(MAX_RESENDPAUSE, (int) (currentResendPause * BACKOFF_BASE));
+//                    if (currentResendPause > 40) {
+                        System.out.println("Incrementing backoff delay to " + currentResendPause);
+//                    }
+                } else if (avgSentCount < BACKOFF_DECREASE_UPPERBOUND) {
+                    currentResendPause = Math.max(MIN_RESENDPAUSE, (int) (currentResendPause / BACKOFF_BASE));
+                    if (currentResendPause > 40) {
+                        System.out.println("Decrementing backoff delay to " + currentResendPause);
+                    }
+                } else {
+                    System.out.println("Changing nothing");
+                }
             }
         }
     }
@@ -193,7 +257,7 @@ public class PerfectLink<T extends Serializable> {
             try {
                 senderRoutine();
             } catch (InterruptedException e) {
-                logger.log("Sender thread " + ti + " stopped.");
+                System.out.println("Sender thread " + ti + " stopped.");
             } catch (IOException e) {
                 System.err.println("Sender thread crashed for IOException");
                 e.printStackTrace();
@@ -205,26 +269,16 @@ public class PerfectLink<T extends Serializable> {
                 while (true) {
                     Sendable<T> se = senderQueue.take();
 
-                    // TODO: notify ReliableChannel user that the receiving process has failed
-                    if (!confirmed.contains(se.n)) {
-                        byte[] buf = se.getSerializedMessage();
-                        DatagramPacket p = new DatagramPacket(buf, buf.length, InetAddress.getByName(se.to.getIp()), se.to.getPort());
+                    // prepare network packet
+                    byte[] buf = se.getSerializedMessage();
+                    DatagramPacket p = new DatagramPacket(buf, buf.length, InetAddress.getByName(se.to.getIp()), se.to.getPort());
 
-                        s.send(p);
+                    // send
+                    s.send(p);
 
-//                        System.out.println("Sent " + se.message.data + " to port " + se.to.getPort());
-
-                        se.tryCount++;
-                        resendWaitingQueue.offer(se); // Possible problem: if this thread crashes, se will be lost
-                    } else {
-                        // Don't need to keep track of confirmed packages anymore
-                        confirmed.remove(se.n);
-
-                        limitLock.lock();
-                        handlingNow.remove(se.n);
-                        nonFull.signal();
-                        limitLock.unlock();
-                    }
+                    // increment tryCount and put on resendQueue
+                    se.tryCount++;
+                    resendWaitingQueue.offer(se); // Possible problem: if this thread crashes, se will be lost
                 }
             }
         }
