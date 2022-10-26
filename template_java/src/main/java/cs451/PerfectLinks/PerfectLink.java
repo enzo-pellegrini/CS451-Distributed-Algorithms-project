@@ -26,7 +26,7 @@ public class PerfectLink<T extends Serializable> {
      * using send window instead, adding new packages in queue only if the sentCount - min(handlingNow) < MAX_HANDLING
      */
     private static final int MAX_HANDLING = 1_000;
-    private static final int RESEND_PAUSE = 50;
+    private static final int RESEND_PAUSE = 40;
 
     private final int myId;
     private final int port;
@@ -39,7 +39,7 @@ public class PerfectLink<T extends Serializable> {
     /**
      * Alway lock <code>limitLock</code> first
      */
-    private final SortedSet<Integer> handlingNow = new TreeSet<>();
+    private int handlingNow = 0;
     /**
      * For each host_id, list of packets waiting to be sent (up to MAX_MESSAGES_IN_PACKET)
      * take <code>limitLock</code> before modifying the lists or adding new ones
@@ -96,7 +96,7 @@ public class PerfectLink<T extends Serializable> {
         limitLock.lock();
 
         try {
-            while (packetCount - (handlingNow.isEmpty() ? 0 : handlingNow.first()) >= MAX_HANDLING) {
+            while (handlingNow >= MAX_HANDLING) {
                 try {
                     nonFull.await();
                 } catch (InterruptedException e) {
@@ -144,7 +144,7 @@ public class PerfectLink<T extends Serializable> {
      */
     private void sendSendable(Sendable<T> se) {
         senderQueue.offer(se);
-        handlingNow.add(se.n);
+        handlingNow++;
     }
 
     /**
@@ -221,7 +221,7 @@ public class PerfectLink<T extends Serializable> {
                         confirmed.remove(se.n);
 
                         limitLock.lock();
-                        handlingNow.remove(se.n);
+                        handlingNow--;
                         nonFull.signal();
                         limitLock.unlock();
                     }
