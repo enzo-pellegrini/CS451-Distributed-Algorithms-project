@@ -20,28 +20,6 @@ public class MSerializer<T> {
         this.messageSize = messageSize;
     }
 
-    public static class DeserializeResult<T> {
-        public DeserializeResult(T val, int len) {
-            this.val = val;
-            this.len = len;
-        }
-
-        public T val;
-        public int len;
-    }
-
-    private byte[] serialize(List<byte[]> components, int expectedSize) {
-        byte[] out = new byte[expectedSize];
-        int pos = 0;
-        for (byte[] comp : components) {
-            for (int i=0; i<comp.length; i++) {
-                out[pos++] = comp[i];
-            }
-        }
-        assert pos == expectedSize;
-        return out;
-    }
-
     public byte[] serialize(NetworkTypes.DataPacket<T> dp) {
         int size = 1 + 4 + 1 + 1 + messageSize * dp.data.size();
         ByteBuffer bb = ByteBuffer.allocate(size);
