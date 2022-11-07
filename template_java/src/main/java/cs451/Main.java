@@ -3,7 +3,6 @@ package cs451;
 import cs451.Parser.Host;
 import cs451.Parser.PerfectLinksConfigParser;
 import cs451.Parser.PerfectLinksParser;
-import cs451.PerfectLinks.MSerializer;
 import cs451.PerfectLinks.PerfectLink;
 import cs451.Printer.OutputWriter;
 
