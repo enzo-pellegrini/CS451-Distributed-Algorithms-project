@@ -76,9 +76,7 @@ public class Main {
 
         rc = new PerfectLink<>(parser.myId(), parser.hosts().get(parser.myId() - 1).getPort(), parser.hosts(),
                 packet -> outputWriter.delivered(packet.from, packet.data),
-                (message, bb) -> {
-                    bb.putInt(message);
-                },
+                (message, bb) -> bb.putInt(message),
                 ByteBuffer::getInt,
                 4
         );

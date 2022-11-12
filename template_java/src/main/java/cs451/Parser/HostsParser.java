@@ -8,6 +8,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
+@SuppressWarnings("ALL")
 public class HostsParser {
 
     private static final String HOSTS_KEY = "--hosts";

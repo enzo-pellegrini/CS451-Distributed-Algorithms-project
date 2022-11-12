@@ -8,10 +8,10 @@ import java.util.List;
  * Types that get sent through UDP (serializable)
  */
 public class NetworkTypes {
-    static abstract class NetworkPacket<T> {
+    static abstract class NetworkPacket {
         public abstract int getN();
     }
-    static class DataPacket<T> extends NetworkPacket<T> {
+    static class DataPacket<T> extends NetworkPacket {
         public final int n;
         public final int from;
         public final List<T> data;
@@ -36,6 +36,7 @@ public class NetworkTypes {
             return result;
         }
 
+        @SuppressWarnings("ALL")
         @Override
         public boolean equals(Object obj) {
             if (this == obj)
@@ -89,6 +90,7 @@ public class NetworkTypes {
             return result;
         }
 
+        @SuppressWarnings("ALL")
         @Override
         public boolean equals(Object obj) {
             if (this == obj)
@@ -106,15 +108,14 @@ public class NetworkTypes {
         }
     }
 
-    static class Sendable<T> {
+    static class Sendable {
         public final int n;
         public final Host to;
         public int tryCount = 0;
         public NetworkPacket message;
+        public byte[] serialized;
 
-        private byte[] buff;
-
-        public Sendable(NetworkPacket<T> message, Host to) {
+        public Sendable(NetworkPacket message, Host to) {
             this.n = message.getN();
             this.message = message;
             this.to = to;

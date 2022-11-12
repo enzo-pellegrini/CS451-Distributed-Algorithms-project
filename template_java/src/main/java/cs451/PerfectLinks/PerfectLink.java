@@ -56,12 +56,12 @@ public class PerfectLink<T> {
     private final Lock limitLock = new ReentrantLock();
     private final Condition nonFull = limitLock.newCondition();
     /**
-     * Alway lock <code>limitLock</code> first
+     * Always lock <code>limitLock</code> first
      */
     private int handlingNow = 0;
 
     /**
-     * time to wait before rensending the packets waiting to be resent
+     * time to wait before resending the packets waiting to be resent
      * follows exponential backoff
      */
     private int currentResendPause = 50;
@@ -78,8 +78,8 @@ public class PerfectLink<T> {
      * Every new packet to be sent is given as id packetCount++
      */
     private int packetCount = 0;
-    private final Deque<NetworkTypes.Sendable<T>> senderQueue = new ConcurrentLinkedDeque<>();
-    private final ConcurrentLinkedQueue<Sendable<T>> resendWaitingQueue = new ConcurrentLinkedQueue<>();
+    private final Deque<NetworkTypes.Sendable> senderQueue = new ConcurrentLinkedDeque<>();
+    private final ConcurrentLinkedQueue<Sendable> resendWaitingQueue = new ConcurrentLinkedQueue<>();
     private final Set<Integer> confirmed = ConcurrentHashMap.newKeySet();
     private final Set<ReceivedPacket> deliveredSet = Collections.synchronizedSet(new HashSet<>());
     private final Consumer<ReceivedMessage<T>> deliver;
@@ -95,8 +95,9 @@ public class PerfectLink<T> {
         this.port = port;
         this.hosts = hosts;
         this.serializer = new MSerializer<>(messageSerializer, messageDeserializer, messageSize);
-        this.sendBuffer = new ArrayList<>(hosts.size());
-        for (int i = 0; i < hosts.size(); i++) sendBuffer.add(new ArrayList<>(MAX_MESSAGES_IN_PACKET));
+        List<List<T>> tmpBuffer = new ArrayList<>(hosts.size());
+        for (int i = 0; i < hosts.size(); i++) tmpBuffer.add(new ArrayList<>(MAX_MESSAGES_IN_PACKET));
+        this.sendBuffer = Collections.unmodifiableList(tmpBuffer);
         this.deliver = deliver;
 
         // Start sender workers
@@ -106,7 +107,7 @@ public class PerfectLink<T> {
         }
 
         // Start receiver worker
-        receiverThread = new Receiver(0);
+        receiverThread = new Receiver();
         receiverThread.start();
 
         resendTimer = new Thread(this::resenderRoutine);
@@ -138,7 +139,7 @@ public class PerfectLink<T> {
             buff.add(content);
 
             if (buff.size() == MAX_MESSAGES_IN_PACKET) {
-                Sendable<T> se = new Sendable<>(new DataPacket<>(++packetCount, myId, new ArrayList<>(buff)), to);
+                Sendable se = new Sendable(new DataPacket<>(++packetCount, myId, new ArrayList<>(buff)), to);
                 sendSendable(se);
                 buff.clear();
             }
@@ -154,7 +155,7 @@ public class PerfectLink<T> {
             for (int i = 0; i < hosts.size(); i++) {
                 List<T> buff = sendBuffer.get(i);
                 if (buff.size() > 0) {
-                    Sendable<T> se = new Sendable<>(new DataPacket<>(++packetCount, myId, new ArrayList<>(buff)), hosts.get(i));
+                    Sendable se = new Sendable(new DataPacket<>(++packetCount, myId, new ArrayList<>(buff)), hosts.get(i));
                     sendSendable(se);
                     buff.clear();
                 }
@@ -170,7 +171,7 @@ public class PerfectLink<T> {
      *
      * @param se Sendable to be scheduled
      */
-    private void sendSendable(Sendable<T> se) {
+    private void sendSendable(Sendable se) {
         senderQueue.offer(se);
         handlingNow++;
     }
@@ -187,8 +188,9 @@ public class PerfectLink<T> {
         resendTimer.interrupt();
     }
 
+    @SuppressWarnings("BusyWait")
     private void resenderRoutine() {
-        Sendable<T> s;
+        Sendable s;
         while (true) {
             try {
                 Thread.sleep(currentResendPause);
@@ -234,8 +236,6 @@ public class PerfectLink<T> {
                     if (currentResendPause > MIN_RESENDPAUSE) {
                         System.out.println("[" + myId + "] Decrementing backoff delay to " + currentResendPause + ", sent " + this.packetCount);
                     }
-                } else {
-//                    System.out.println("Changing nothing");
                 }
             }
         }
@@ -261,19 +261,23 @@ public class PerfectLink<T> {
             }
         }
 
+        @SuppressWarnings({"InfiniteLoopStatement", "unchecked", "rawtypes"})
         private void senderRoutine() throws InterruptedException, IOException {
             try (DatagramSocket s = new DatagramSocket()) {
                 while (true) {
                     if (senderQueue.isEmpty()) // TODO: don't busy loop
                         continue;
 
-                    Sendable<T> se = senderQueue.pop();
+                    Sendable se = senderQueue.pop();
 
                     byte[] buf;
                     boolean isAck = true;
                     // prepare network packet
                     if (se.message instanceof DataPacket) {
-                        buf = serializer.serialize((DataPacket)se.message);
+                        if (se.serialized == null) {
+                            se.serialized = serializer.serialize((DataPacket) se.message);
+                        }
+                        buf = se.serialized;
                         isAck = false;
                     } else {
                         buf = serializer.serialize((AckPacket)se.message);
@@ -294,11 +298,8 @@ public class PerfectLink<T> {
     }
 
     class Receiver extends Thread {
-        private int ti;
-
-        public Receiver(int ti) {
+        public Receiver() {
             super();
-            this.ti = ti;
         }
 
         @Override
@@ -310,6 +311,7 @@ public class PerfectLink<T> {
             }
         }
 
+        @SuppressWarnings("InfiniteLoopStatement")
         private void receiverRoutine() throws IOException {
             try (DatagramSocket s = new DatagramSocket(port)) {
 
@@ -327,12 +329,11 @@ public class PerfectLink<T> {
                     } else {
                         DataPacket<T> dp = serializer.deserializeDataPacket(buff);
 
-                        sendAckForPacket(s, dp);
+                        sendAckForPacket(dp);
 
                         if (!deliveredSet.contains(new ReceivedPacket(dp))) {
                             deliveredSet.add(new ReceivedPacket(dp));
-                            for (Object m : dp.data) {
-                                T message = (T) m;
+                            for (T message : dp.data) {
                                 deliver.accept(new ReceivedMessage<>(message, dp.from));
                             }
                         }
@@ -341,10 +342,10 @@ public class PerfectLink<T> {
             }
         }
 
-        private void sendAckForPacket(DatagramSocket s, DataPacket<T> dp) throws IOException {
+        private void sendAckForPacket(DataPacket<T> dp) {
             final Host dst = hosts.get(dp.from - 1); // TODO: maybe too great of an assumption?
 
-            Sendable<T> se = new Sendable(new AckPacket(dp.n, myId), dst);
+            Sendable se = new Sendable(new AckPacket(dp.n, myId), dst);
             senderQueue.addFirst(se);
 
 //            System.out.println("sending ack to " + se.to.getId());

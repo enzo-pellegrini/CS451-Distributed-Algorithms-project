@@ -1,14 +1,13 @@
 package cs451.Parser;
 
 import java.io.BufferedReader;
-import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
 public class PerfectLinksConfigParser {
-    public class ConfigEntry {
+    public static class ConfigEntry {
         private final int numMessages;
         private final int dstProcess;
 
@@ -25,7 +24,7 @@ public class PerfectLinksConfigParser {
         }
     }
 
-    private List<ConfigEntry> entries = new ArrayList<>();
+    private final List<ConfigEntry> entries = new ArrayList<>();
 
     public boolean populate(String path, HostsParser hostsParser) {
         try (BufferedReader br = new BufferedReader(new FileReader(path))) {
