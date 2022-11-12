@@ -1,17 +1,15 @@
 package cs451;
 
+import cs451.Parser.FIFOParser;
 import cs451.Parser.Host;
-import cs451.Parser.PerfectLinksConfigParser;
-import cs451.Parser.PerfectLinksParser;
-import cs451.PerfectLinks.PerfectLink;
 import cs451.Printer.OutputWriter;
+import cs451.UniformReliableBroadcast.UniformReliableBroadcast;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.time.Instant;
 
 public class Main {
-    static PerfectLink<Integer> rc;
     static OutputWriter outputWriter;
 
     static Instant start;
@@ -19,7 +17,7 @@ public class Main {
     private static void handleSignal() {
         //immediately stop network packet processing
         System.out.println("Immediately stopping network packet processing.");
-        rc.interruptAll();
+//        rc.interruptAll();
 
         //write/flush output file if necessary
         System.out.println("Writing output.");
@@ -37,7 +35,7 @@ public class Main {
     public static void main(String[] args) throws InterruptedException {
         start = Instant.now();
 
-        PerfectLinksParser parser = new PerfectLinksParser(args);
+        FIFOParser parser = new FIFOParser(args);
         parser.parse();
 
         initSignalHandlers();
@@ -74,27 +72,43 @@ public class Main {
             throw new RuntimeException(e);
         }
 
-        rc = new PerfectLink<>(parser.myId(), parser.hosts().get(parser.myId() - 1).getPort(), parser.hosts(),
-                packet -> outputWriter.delivered(packet.from, packet.data),
-                (message, bb) -> bb.putInt(message),
-                ByteBuffer::getInt,
-                4
-        );
+//        rc = new PerfectLink<>(parser.myId(), parser.hosts().get(parser.myId() - 1).getPort(), parser.hosts(),
+//                packet -> outputWriter.delivered(packet.from, packet.data),
+//                (message, bb) -> bb.putInt(message),
+//                ByteBuffer::getInt,
+//                4
+//        );
 
-        System.out.println("Broadcasting and delivering messages...\n");
+        System.out.println("Broadcasting " + parser.numMessages() + " messages and delivering messages...\n");
 
 
-        int messageNumber = 0;
-        for (PerfectLinksConfigParser.ConfigEntry ce : parser.configEntries()) {
-            if (parser.myId() != ce.getDstProcess()) {
-                for (int i = 0; i < ce.getNumMessages(); i++) {
-                    outputWriter.broadcasted(++messageNumber);
-                    rc.send(messageNumber, parser.hosts().get(ce.getDstProcess() - 1));
-                }
-            }
+//        int messageNumber = 0;
+//        for (PerfectLinksConfigParser.ConfigEntry ce : parser.configEntries()) {
+//            if (parser.myId() != ce.getDstProcess()) {
+//                for (int i = 0; i < ce.getNumMessages(); i++) {
+//                    outputWriter.broadcasted(++messageNumber);
+//                    rc.send(messageNumber, parser.hosts().get(ce.getDstProcess() - 1));
+//                }
+//            }
+//        }
+//        System.out.println("I finished sending?");
+//        rc.flushMessageBuffers();
+
+        UniformReliableBroadcast<Integer> urb =
+                new UniformReliableBroadcast<>(parser.myId(), parser.hosts().get(parser.myId() - 1).getPort(), parser.hosts(),
+//                        packet -> System.out.println("Delivered " + packet.message + " from " + packet.from),
+                        packet -> outputWriter.delivered(packet.from, packet.message),
+                        (message, bb) -> bb.putInt(message),
+                        ByteBuffer::getInt,
+                        Integer.BYTES);
+
+        for (int i=0; i<parser.numMessages(); i++) {
+            urb.broadcast(i+1);
+//            System.out.println("Broadcasted " + (i+1));
+            outputWriter.broadcasted(i+1);
         }
-        System.out.println("I finished sending?");
-        rc.flushMessageBuffers();
+        urb.flushBuffers();
+        System.out.println("Done sending?");
 
         // After a process finishes broadcasting,
         // it waits forever for the delivery of messages.

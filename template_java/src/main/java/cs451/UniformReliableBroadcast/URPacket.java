@@ -30,6 +30,15 @@ class URPacket<T> {
     }
 
     @Override
+    public String toString() {
+        return "URPacket{" +
+                "n=" + n +
+                ", from=" + from +
+                ", message=" + message +
+                '}';
+    }
+
+    @Override
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;

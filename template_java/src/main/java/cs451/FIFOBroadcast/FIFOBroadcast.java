@@ -23,6 +23,7 @@ public class FIFOBroadcast<T> {
             this.data = data;
         }
     }
+
     private final AtomicInteger sentCounter = new AtomicInteger(0);
 
     private final UniformReliableBroadcast<FIFOPacket<T>> urb;
@@ -38,7 +39,7 @@ public class FIFOBroadcast<T> {
                          Function<ByteBuffer, T> messageDeserializer,
                          int messageSize) {
         this.urb = new UniformReliableBroadcast<>(myId, port, hosts,
-                this::onDeliver,
+                receivedMessage -> onDeliver(receivedMessage.message),
                 (fifoPacket, byteBuffer) -> fifoPacket.serialize(byteBuffer, messageSerializer),
                 bb -> FIFOPacket.deserialize(bb, messageDeserializer),
                 messageSize + Integer.BYTES + 1);
@@ -58,6 +59,10 @@ public class FIFOBroadcast<T> {
     public void broadcast(T message) {
         FIFOPacket<T> packet = new FIFOPacket<>(sentCounter.incrementAndGet(), myId, message);
         urb.broadcast(packet);
+    }
+
+    private void flushBuffers() {
+        urb.flushBuffers();
     }
 
     private void onDeliver(FIFOPacket<T> packet) {

@@ -5,7 +5,7 @@ import java.util.Objects;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 
-public class FIFOPacket<T> implements Comparable<T> {
+class FIFOPacket<T> implements Comparable<T> {
     public final int n;
     public final int from;
     public final T message;

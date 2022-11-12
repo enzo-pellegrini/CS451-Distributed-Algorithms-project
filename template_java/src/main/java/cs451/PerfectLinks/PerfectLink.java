@@ -40,6 +40,10 @@ public class PerfectLink<T> {
      * Maximum value the resend pause can assume
      */
     private static final int MAX_RESENDPAUSE = 5000;
+    /**
+     * Maximum number of packages to be sent by <code>resenderRoutine</code> before sleeping
+     */
+    private static final int MAX_SEND_AT_ONCE = 2500;
 
     private final int myId;
     private final int port;
@@ -162,6 +166,7 @@ public class PerfectLink<T> {
      * Kill all sender and receiver threads
      * packets waiting to be sent are not sent
      */
+    @SuppressWarnings("unused")
     public void interruptAll() {
         for (var senderThread : senderThreads) {
             senderThread.interrupt();
@@ -181,11 +186,11 @@ public class PerfectLink<T> {
             }
 
             int packetCount = 0;
-            double sentCountSum = 0;
-            while ((s = resendWaitingQueue.poll()) != null) {
+            double sentTrySum = 0;
+            while ((s = resendWaitingQueue.poll()) != null && packetCount < MAX_SEND_AT_ONCE) {
                 // gather statistics for incremental backoff
                 packetCount++;
-                sentCountSum += s.tryCount;
+                sentTrySum += s.tryCount;
 
                 if (confirmed.contains(s.n)) {
                     confirmed.remove(s.n); // No need to keep track of this package anymore
@@ -197,7 +202,7 @@ public class PerfectLink<T> {
             }
 
             // Exponential backoff logic
-            double avgSentCount = sentCountSum / packetCount;
+            double avgSentCount = sentTrySum / packetCount;
             if (packetCount > 2000) { // The algorithm is quite unstable when the queue is empty
                 if (avgSentCount > BACKOFF_INCREASE_LOWERBOUND) {
                     currentResendPause = Math.min(MAX_RESENDPAUSE, (int) (currentResendPause * BACKOFF_BASE_UP));
@@ -211,6 +216,10 @@ public class PerfectLink<T> {
                     }
                 }
             }
+
+            // Flush buffers cause doing it in the upper level is a mess
+            // TODO: where can I move this?
+            flushMessageBuffers();
         }
     }
 
@@ -234,7 +243,7 @@ public class PerfectLink<T> {
             }
         }
 
-        @SuppressWarnings({"InfiniteLoopStatement", "unchecked", "rawtypes"})
+        @SuppressWarnings({"InfiniteLoopStatement", "unchecked", "rawtypes", "BusyWait"})
         private void senderRoutine() throws InterruptedException, IOException {
             try (DatagramSocket s = new DatagramSocket()) {
                 while (true) {
@@ -254,8 +263,15 @@ public class PerfectLink<T> {
                     }
                     DatagramPacket p = new DatagramPacket(buf, buf.length, InetAddress.getByName(se.to.getIp()), se.to.getPort());
 
-                    // send
-                    s.send(p);
+                    try {
+                        // send
+                        s.send(p);
+                    } catch (IOException e) {
+                        System.err.println(e.getMessage());
+                        System.out.println("Now sleeping");
+                        Thread.sleep(100);
+                        senderQueue.putFirst(se);
+                    }
 
                     if (!isAck) {
                         // increment tryCount and put on resendQueue
