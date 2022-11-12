@@ -78,7 +78,7 @@ public class PerfectLink<T> {
      * Every new packet to be sent is given as id packetCount++
      */
     private int packetCount = 0;
-    private final Deque<NetworkTypes.Sendable> senderQueue = new ConcurrentLinkedDeque<>();
+    private final BlockingDeque<NetworkTypes.Sendable> senderQueue = new LinkedBlockingDeque<>();
     private final ConcurrentLinkedQueue<Sendable> resendWaitingQueue = new ConcurrentLinkedQueue<>();
     private final Set<Integer> confirmed = ConcurrentHashMap.newKeySet();
     private final Set<ReceivedPacket> deliveredSet = Collections.synchronizedSet(new HashSet<>());
@@ -265,10 +265,7 @@ public class PerfectLink<T> {
         private void senderRoutine() throws InterruptedException, IOException {
             try (DatagramSocket s = new DatagramSocket()) {
                 while (true) {
-                    if (senderQueue.isEmpty()) // TODO: don't busy loop
-                        continue;
-
-                    Sendable se = senderQueue.pop();
+                    Sendable se = senderQueue.take();
 
                     byte[] buf;
                     boolean isAck = true;
