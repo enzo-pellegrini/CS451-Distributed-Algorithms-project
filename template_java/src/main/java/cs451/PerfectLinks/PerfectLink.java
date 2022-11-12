@@ -10,7 +10,6 @@ import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiConsumer;
@@ -20,12 +19,6 @@ import java.util.function.Function;
 public class PerfectLink<T> {
     private static final int MAX_MESSAGES_IN_PACKET = 8;
     private static final int SENDER_COUNT = 1;
-//    private static final int MAX_SEND_TRIES = 200;
-    /**
-     * using send window instead, adding new packages in queue only if the sentCount - min(handlingNow) < MAX_HANDLING
-     */
-    private static final int MAX_HANDLING = 2_000;
-
     /**
      * Multiplying factor of the exponential backoff algorithm
      */
@@ -53,18 +46,16 @@ public class PerfectLink<T> {
     private final List<Host> hosts;
 
 
-    private final Lock limitLock = new ReentrantLock();
-    private final Condition nonFull = limitLock.newCondition();
-    /**
-     * Always lock <code>limitLock</code> first
-     */
-    private int handlingNow = 0;
 
     /**
      * time to wait before resending the packets waiting to be resent
      * follows exponential backoff
      */
     private int currentResendPause = 50;
+    /**
+     * lock for sendBuffer
+     */
+    private final Lock sendBufferLock = new ReentrantLock();
     /**
      * For each host_id, list of packets waiting to be sent (up to MAX_MESSAGES_IN_PACKET)
      * take <code>limitLock</code> before modifying the lists or adding new ones
@@ -122,17 +113,9 @@ public class PerfectLink<T> {
      * @param content message to be sent
      */
     public void send(T content, Host to) {
-        limitLock.lock();
+        sendBufferLock.lock();
 
         try {
-            while (handlingNow >= MAX_HANDLING) {
-                try {
-                    nonFull.await();
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            }
-
             List<T> buff = sendBuffer.get(to.getId() - 1);
             assert (buff.size() < MAX_MESSAGES_IN_PACKET);   // It can't be MAX_MESSAGES_IN_PACKET if I always send when full
 
@@ -144,12 +127,12 @@ public class PerfectLink<T> {
                 buff.clear();
             }
         } finally {
-            limitLock.unlock();
+            sendBufferLock.unlock();
         }
     }
 
     public void flushMessageBuffers() {
-        limitLock.lock();
+        sendBufferLock.lock();
 
         try {
             for (int i = 0; i < hosts.size(); i++) {
@@ -161,7 +144,7 @@ public class PerfectLink<T> {
                 }
             }
         } finally {
-            limitLock.unlock();
+            sendBufferLock.unlock();
         }
     }
 
@@ -172,8 +155,7 @@ public class PerfectLink<T> {
      * @param se Sendable to be scheduled
      */
     private void sendSendable(Sendable se) {
-        senderQueue.offer(se);
-        handlingNow++;
+        resendWaitingQueue.offer(se);
     }
 
     /**
@@ -208,15 +190,6 @@ public class PerfectLink<T> {
                 if (confirmed.contains(s.n)) {
                     confirmed.remove(s.n); // No need to keep track of this package anymore
 
-                    // The upper level can now add more packages
-                    // TODO: why not do this when the ack is received?
-                    limitLock.lock();
-                    try {
-                        handlingNow--;
-                        nonFull.signal();
-                    } finally {
-                        limitLock.unlock();
-                    }
                 } else {
                     senderQueue.offer(s);
 
