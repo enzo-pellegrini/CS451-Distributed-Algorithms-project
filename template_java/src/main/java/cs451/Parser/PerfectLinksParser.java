@@ -2,6 +2,7 @@ package cs451.Parser;
 
 import java.util.List;
 
+@SuppressWarnings("unused")
 public class PerfectLinksParser extends Parser {
     private final PerfectLinksConfigParser perfectLinksConfigParser = new PerfectLinksConfigParser();
 
