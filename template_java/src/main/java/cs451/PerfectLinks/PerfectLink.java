@@ -166,7 +166,6 @@ public class PerfectLink<T> {
      * Kill all sender and receiver threads
      * packets waiting to be sent are not sent
      */
-    @SuppressWarnings("unused")
     public void interruptAll() {
         for (var senderThread : senderThreads) {
             senderThread.interrupt();

@@ -23,6 +23,15 @@ class FIFOPacket<T> implements Comparable<T> {
         return new FIFOPacket<>(n, from, message);
     }
 
+    @Override
+    public String toString() {
+        return "FIFOPacket{" +
+                "n=" + n +
+                ", from=" + from +
+                ", message=" + message +
+                '}';
+    }
+
     public void serialize(ByteBuffer bb, BiConsumer<T, ByteBuffer> serializer) {
         bb.putInt(n);
         bb.put((byte) (from - 1));

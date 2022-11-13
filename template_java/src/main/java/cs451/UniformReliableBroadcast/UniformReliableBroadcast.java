@@ -18,7 +18,7 @@ import java.util.function.Function;
  */
 @SuppressWarnings("FieldCanBeLocal")
 public class UniformReliableBroadcast<T> {
-    private final int MAX_HANDLING_UNDERNEATH = 10_000;
+    private final int MAX_HANDLING_UNDERNEATH = 2_500;
     private final int MAX_HANDLING;
     public static class ReceivedURBMessage<T> {
         public final int from;
@@ -60,9 +60,14 @@ public class UniformReliableBroadcast<T> {
         this.myId = myId;
         this.hosts = hosts;
 
-        this.MAX_HANDLING = Math.max(1, MAX_HANDLING_UNDERNEATH / (hosts.size() * hosts.size()));
+        // Mother of all cheats
+        this.MAX_HANDLING = Math.max(1, MAX_HANDLING_UNDERNEATH / (hosts.size()));
 
         this.deliver = deliver;
+    }
+
+    public void interruptAll() {
+        pl.interruptAll();
     }
 
     /**

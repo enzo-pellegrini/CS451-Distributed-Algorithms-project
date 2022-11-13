@@ -14,13 +14,14 @@ import java.util.function.Function;
 
 @SuppressWarnings("unused")
 public class FIFOBroadcast<T> {
+
     public static final class ReceivedMessage<T> {
         public final int from;
-        public final T data;
+        public final T message;
 
-        public ReceivedMessage(int from, T data) {
+        public ReceivedMessage(int from, T message) {
             this.from = from;
-            this.data = data;
+            this.message = message;
         }
     }
 
@@ -61,14 +62,20 @@ public class FIFOBroadcast<T> {
         urb.broadcast(packet);
     }
 
-    private void flushBuffers() {
+    public void flushBuffers() {
         urb.flushBuffers();
+    }
+
+    public void interruptAll() {
+        urb.interruptAll();
     }
 
     private void onDeliver(FIFOPacket<T> packet) {
         inFlightLock.lock();
         try {
             inFlight.get(packet.from - 1).add(packet);
+
+//            System.out.println("Received message " + packet);
 
             while (packet.n == lastDelivered[packet.from - 1] + 1) {
                 deliver.accept(new ReceivedMessage<>(packet.from, packet.message));
