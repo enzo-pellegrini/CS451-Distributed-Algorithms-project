@@ -98,15 +98,25 @@ public class PerfectLink<T> {
         // Start sender workers
         for (int i = 0; i < SENDER_COUNT; i++) {
             senderThreads[i] = new Sender(i);
-            senderThreads[i].start();
         }
 
         // Start receiver worker
         receiverThread = new Receiver();
-        receiverThread.start();
 
         resendTimer = new Thread(this::resenderRoutine);
-        resendTimer.start();
+    }
+
+    /**
+     * Start all needed threads
+     */
+    public void startThreads() {
+        for (int i=0; i < SENDER_COUNT; i++) {
+            senderThreads[i].start();
+
+            receiverThread.start();
+
+            resendTimer.start();
+        }
     }
 
     /**

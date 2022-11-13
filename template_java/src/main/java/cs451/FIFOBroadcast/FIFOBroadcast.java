@@ -12,7 +12,6 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-@SuppressWarnings("unused")
 public class FIFOBroadcast<T> {
 
     public static final class ReceivedMessage<T> {
@@ -39,12 +38,6 @@ public class FIFOBroadcast<T> {
                          BiConsumer<T, ByteBuffer> messageSerializer,
                          Function<ByteBuffer, T> messageDeserializer,
                          int messageSize) {
-        this.urb = new UniformReliableBroadcast<>(myId, port, hosts,
-                receivedMessage -> onDeliver(receivedMessage.message),
-                (fifoPacket, byteBuffer) -> fifoPacket.serialize(byteBuffer, messageSerializer),
-                bb -> FIFOPacket.deserialize(bb, messageDeserializer),
-                messageSize + Integer.BYTES + 1);
-
         this.myId = myId;
         this.deliver = deliver;
 
@@ -55,6 +48,16 @@ public class FIFOBroadcast<T> {
         this.inFlight = Collections.unmodifiableList(tmpInFlight);
 
         this.lastDelivered = new int[hosts.size()];
+
+        this.urb = new UniformReliableBroadcast<>(myId, port, hosts,
+                receivedMessage -> onDeliver(receivedMessage.message),
+                (fifoPacket, byteBuffer) -> fifoPacket.serialize(byteBuffer, messageSerializer),
+                bb -> FIFOPacket.deserialize(bb, messageDeserializer),
+                messageSize + Integer.BYTES + 1);
+    }
+
+    public void startThreads() {
+        urb.startThreads();
     }
 
     public void broadcast(T message) {

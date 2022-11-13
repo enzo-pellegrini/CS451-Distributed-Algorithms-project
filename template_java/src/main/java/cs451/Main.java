@@ -35,14 +35,11 @@ public class Main {
     }
 
     public static void main(String[] args) throws InterruptedException {
-        start = Instant.now();
-
         FIFOParser parser = new FIFOParser(args);
         parser.parse();
 
         initSignalHandlers();
 
-        // example
         long pid = ProcessHandle.current().pid();
         System.out.println("My PID: " + pid + "\n");
         System.out.println("From a new terminal type `kill -SIGINT " + pid + "` or `kill -SIGTERM " + pid + "` to stop processing packets\n");
@@ -82,10 +79,10 @@ public class Main {
                         (message, bb) -> bb.putInt(message),
                         ByteBuffer::getInt,
                         Integer.BYTES);
+        fifo.startThreads();
 
         for (int i=0; i<parser.numMessages(); i++) {
             fifo.broadcast(i+1);
-//            System.out.println("Broadcasted " + (i+1));
             outputWriter.broadcasted(i+1);
         }
         fifo.flushBuffers();

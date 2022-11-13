@@ -18,7 +18,7 @@ import java.util.function.Function;
  */
 @SuppressWarnings("FieldCanBeLocal")
 public class UniformReliableBroadcast<T> {
-    private final int MAX_HANDLING_UNDERNEATH = 2_500;
+    private final int MAX_HANDLING_UNDERNEATH = 10_000;
     private final int MAX_HANDLING;
     public static class ReceivedURBMessage<T> {
         public final int from;
@@ -35,6 +35,7 @@ public class UniformReliableBroadcast<T> {
     private final PerfectLink<URPacket<T>> pl;
     private final int myId;
     private final List<Host> hosts;
+    private final int numHosts;
     private final Consumer<ReceivedURBMessage<T>> deliver;
     private final Lock inFlightLock = new ReentrantLock();
     private final Map<URPacket<T>, Integer> inFlight = new HashMap<>();
@@ -51,19 +52,24 @@ public class UniformReliableBroadcast<T> {
                                     Function<ByteBuffer, T> messageDeserializer,
                                     int messageSize) {
 
+        this.myId = myId;
+        this.hosts = hosts;
+        this.numHosts = hosts.size();
+
+        // Mother of all cheats
+        this.MAX_HANDLING = Math.max(1, MAX_HANDLING_UNDERNEATH / (hosts.size() * hosts.size()));
+
+        this.deliver = deliver;
+
         this.pl = new PerfectLink<>(myId, port, hosts,
                 receivedMessage -> onDeliver(receivedMessage.data),
                 (urPacket, byteBuffer) -> urPacket.serialize(byteBuffer, messageSerializer),
                 bb -> URPacket.deserialize(bb, messageDeserializer),
                 messageSize + Integer.BYTES + 1);
+    }
 
-        this.myId = myId;
-        this.hosts = hosts;
-
-        // Mother of all cheats
-        this.MAX_HANDLING = Math.max(1, MAX_HANDLING_UNDERNEATH / (hosts.size()));
-
-        this.deliver = deliver;
+    public void startThreads() {
+        pl.startThreads();
     }
 
     public void interruptAll() {
@@ -122,15 +128,12 @@ public class UniformReliableBroadcast<T> {
         try {
             Integer soFar = inFlight.getOrDefault(packet, 1);
 
-//            System.out.println("[PerfectLinks] Received message " + packet.message.toString() + " from " + packet.from
-//                    + "\n it has " + soFar + " confirmed");
-
             inFlight.put(packet, soFar + 1); // update number of processes that acked
 
             if (soFar == 1 && packet.from != myId) {
                 shouldBroadcast = true;
             }
-            if ((soFar+1 >= ((hosts.size()/2) + 1))
+            if ((soFar+1 >= ((numHosts/2) + 1))
                         && !delivered.contains(new DeliveredMessage(packet.from, packet.n))) {
                 delivered.add(new DeliveredMessage(packet.from, packet.n));
                 shouldDeliver = true;
@@ -143,12 +146,14 @@ public class UniformReliableBroadcast<T> {
         if (shouldDeliver) {
             deliver.accept(new ReceivedURBMessage<>(packet.from, packet.message));
 
-            handlingNowLock.lock();
-            try {
-                handlingNow--;
-                canHandleMore.signal();
-            } finally {
-                handlingNowLock.unlock();
+            if (packet.from == myId) {
+                handlingNowLock.lock();
+                try {
+                    handlingNow--;
+                    canHandleMore.signal();
+                } finally {
+                    handlingNowLock.unlock();
+                }
             }
         }
     }

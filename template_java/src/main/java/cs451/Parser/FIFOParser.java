@@ -1,6 +1,5 @@
 package cs451.Parser;
 
-@SuppressWarnings("unused")
 public class FIFOParser extends Parser {
     private final FIFOConfigParser fifoConfigParser = new FIFOConfigParser();
 
