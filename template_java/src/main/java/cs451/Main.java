@@ -11,7 +11,7 @@ import java.time.Instant;
 
 public class Main {
     static OutputWriter outputWriter;
-    static FIFOBroadcast<Integer> fifo;
+    static BufferedFIFOBroadcast<Integer> fifo;
 
     static Instant start;
 
@@ -74,16 +74,16 @@ public class Main {
 
         System.out.println("Broadcasting " + parser.numMessages() + " messages and delivering messages...\n");
 
-        fifo = new FIFOBroadcast<>(parser.myId(), parser.hosts().get(parser.myId() - 1).getPort(), parser.hosts(),
-                        packet -> outputWriter.delivered(packet.from, packet.message),
-                        (message, bb) -> bb.putInt(message),
-                        ByteBuffer::getInt,
-                        Integer.BYTES);
+        fifo = new BufferedFIFOBroadcast<>(parser.myId(), parser.hosts().get(parser.myId() - 1).getPort(), parser.hosts(),
+                packet -> outputWriter.delivered(packet.from, packet.message),
+                (message, bb) -> bb.putInt(message),
+                ByteBuffer::getInt,
+                Integer.BYTES);
         fifo.startThreads();
 
-        for (int i=0; i<parser.numMessages(); i++) {
-            fifo.broadcast(i+1);
-            outputWriter.broadcasted(i+1);
+        for (int i = 0; i < parser.numMessages(); i++) {
+            fifo.broadcast(i + 1);
+            outputWriter.broadcasted(i + 1);
         }
         fifo.flushBuffers();
         System.out.println("Done sending?");

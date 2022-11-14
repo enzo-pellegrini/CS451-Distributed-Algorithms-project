@@ -14,14 +14,14 @@ public class NetworkTypes {
     static class DataPacket<T> extends NetworkPacket {
         public final int n;
         public final int from;
-        public final List<T> data;
+        public final T data;
 
         @Override
         public int getN() {
             return n;
         }
 
-        public DataPacket(int n, int from, List<T> data) {
+        public DataPacket(int n, int from, T data) {
             this.n = n;
             this.from = from;
             this.data = data;

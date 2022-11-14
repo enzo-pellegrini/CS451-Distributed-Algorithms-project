@@ -1,11 +1,11 @@
 package cs451.FIFOBroadcast;
 
 import cs451.Parser.Host;
+import cs451.UniformReliableBroadcast.ReceivedURBMessage;
 import cs451.UniformReliableBroadcast.UniformReliableBroadcast;
 
 import java.nio.ByteBuffer;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiConsumer;
@@ -24,12 +24,9 @@ public class FIFOBroadcast<T> {
         }
     }
 
-    private final AtomicInteger sentCounter = new AtomicInteger(0);
-
-    private final UniformReliableBroadcast<FIFOPacket<T>> urb;
+    private final UniformReliableBroadcast<T> urb;
     private final Consumer<ReceivedMessage<T>> deliver;
-    private final int myId;
-    private final List<SortedSet<FIFOPacket<T>>> inFlight;
+    private final List<SortedSet<ReceivedURBMessage<T>>> inFlight;
     private final Lock inFlightLock = new ReentrantLock();
     private final int[] lastDelivered;
 
@@ -38,10 +35,9 @@ public class FIFOBroadcast<T> {
                          BiConsumer<T, ByteBuffer> messageSerializer,
                          Function<ByteBuffer, T> messageDeserializer,
                          int messageSize) {
-        this.myId = myId;
         this.deliver = deliver;
 
-        List<SortedSet<FIFOPacket<T>>> tmpInFlight = new ArrayList<>();
+        List<SortedSet<ReceivedURBMessage<T>>> tmpInFlight = new ArrayList<>();
         for (int i = 0; i < hosts.size(); i++) {
             tmpInFlight.add(new TreeSet<>());
         }
@@ -50,10 +46,10 @@ public class FIFOBroadcast<T> {
         this.lastDelivered = new int[hosts.size()];
 
         this.urb = new UniformReliableBroadcast<>(myId, port, hosts,
-                receivedMessage -> onDeliver(receivedMessage.message),
-                (fifoPacket, byteBuffer) -> fifoPacket.serialize(byteBuffer, messageSerializer),
-                bb -> FIFOPacket.deserialize(bb, messageDeserializer),
-                messageSize + Integer.BYTES + 1);
+                this::onDeliver,
+                messageSerializer,
+                messageDeserializer,
+                messageSize);
     }
 
     public void startThreads() {
@@ -61,19 +57,14 @@ public class FIFOBroadcast<T> {
     }
 
     public void broadcast(T message) {
-        FIFOPacket<T> packet = new FIFOPacket<>(sentCounter.incrementAndGet(), myId, message);
-        urb.broadcast(packet);
-    }
-
-    public void flushBuffers() {
-        urb.flushBuffers();
+        urb.broadcast(message);
     }
 
     public void interruptAll() {
         urb.interruptAll();
     }
 
-    private void onDeliver(FIFOPacket<T> packet) {
+    private void onDeliver(ReceivedURBMessage<T> packet) {
         inFlightLock.lock();
         try {
             inFlight.get(packet.from - 1).add(packet);

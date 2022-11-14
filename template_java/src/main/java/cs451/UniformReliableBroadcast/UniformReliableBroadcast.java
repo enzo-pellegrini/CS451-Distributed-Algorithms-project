@@ -18,17 +18,8 @@ import java.util.function.Function;
  */
 @SuppressWarnings("FieldCanBeLocal")
 public class UniformReliableBroadcast<T> {
-    private final int MAX_HANDLING_UNDERNEATH = 10_000;
+    private final int MAX_HANDLING_UNDERNEATH = 2_500;
     private final int MAX_HANDLING;
-    public static class ReceivedURBMessage<T> {
-        public final int from;
-        public final T message;
-
-        public ReceivedURBMessage(int from, T message) {
-            this.from = from;
-            this.message = message;
-        }
-    }
 
     private final AtomicInteger sentCounter = new AtomicInteger(0);
 
@@ -116,10 +107,6 @@ public class UniformReliableBroadcast<T> {
         }
     }
 
-    public void flushBuffers() {
-        pl.flushMessageBuffers();
-    }
-
     private void onDeliver(URPacket<T> packet) {
         boolean shouldBroadcast = false;
         boolean shouldDeliver = false;
@@ -144,7 +131,7 @@ public class UniformReliableBroadcast<T> {
 
         if (shouldBroadcast) bestEffortBroadcast(packet);
         if (shouldDeliver) {
-            deliver.accept(new ReceivedURBMessage<>(packet.from, packet.message));
+            deliver.accept(new ReceivedURBMessage<>(packet.from, packet.n, packet.message));
 
             if (packet.from == myId) {
                 handlingNowLock.lock();

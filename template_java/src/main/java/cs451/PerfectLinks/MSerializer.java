@@ -18,14 +18,12 @@ public class MSerializer<T> {
     }
 
     public byte[] serialize(NetworkTypes.DataPacket<T> dp) {
-        int size = 1 + 4 + 1 + 1 + messageSize * dp.data.size();
+        int size = 1 + 4 + 1 + messageSize;
         ByteBuffer bb = ByteBuffer.allocate(size);
         bb.put((byte)(1));
         bb.putInt(dp.n);
-        bb.put((byte)(dp.from));
-        bb.put((byte)(dp.data.size()));
-        for (T m : dp.data)
-            messageSerializer.accept(m, bb);
+        bb.put((byte)(dp.from - 1));
+        messageSerializer.accept(dp.data, bb);
         return bb.array();
     }
 
@@ -34,7 +32,7 @@ public class MSerializer<T> {
         ByteBuffer bb = ByteBuffer.allocate(size);
         bb.put((byte)(0));
         bb.putInt(ap.n);
-        bb.put((byte)(ap.receiver_id));
+        bb.put((byte)(ap.receiver_id - 1));
         return bb.array();
     }
 
@@ -50,15 +48,11 @@ public class MSerializer<T> {
         assert type > 0;
 
         int n = bb.getInt();
-        int from = bb.get();
+        int from = (bb.get() & 0xFF) + 1;
 
-        int nMessages = bb.get();
-        List<T> messages = new ArrayList<>(nMessages);
-        for (int i=0; i<nMessages; i++) {
-            messages.add(messageDeserializer.apply(bb));
-        }
+        T message = messageDeserializer.apply(bb);
 
-        return new NetworkTypes.DataPacket<>(n, from, messages);
+        return new NetworkTypes.DataPacket<>(n, from, message);
     }
 
     public NetworkTypes.AckPacket deserializeAckPacket(byte[] data) {
@@ -67,7 +61,7 @@ public class MSerializer<T> {
         assert type == 0;
 
         int n = bb.getInt();
-        int receiver_id = bb.get();
+        int receiver_id = (bb.get() & 0xFF) + 1;
 
         return new NetworkTypes.AckPacket(n, receiver_id);
     }

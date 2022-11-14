@@ -10,19 +10,18 @@ import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
 public class PerfectLink<T> {
-    private static final int MAX_MESSAGES_IN_PACKET = 8;
     private static final int SENDER_COUNT = 1;
     /**
      * Multiplying factor of the exponential backoff algorithm
+     * NO BULLI!
      */
-    private static final double BACKOFF_BASE_UP = 1.2;
+    private static final double BACKOFF_BASE_UP = 2;
     private static final double BACKOFF_BASE_DOWN = 1.5;
     /**
      * If the average of the sentCount of the values in the resend buffer is lower than this, decrement the resendPause
@@ -43,7 +42,7 @@ public class PerfectLink<T> {
     /**
      * Maximum number of packages to be sent by <code>resenderRoutine</code> before sleeping
      */
-    private static final int MAX_SEND_AT_ONCE = 2500;
+    private static final int MAX_SEND_AT_ONCE = 250;
 
     private final int myId;
     private final int port;
@@ -56,23 +55,8 @@ public class PerfectLink<T> {
      * follows exponential backoff
      */
     private int currentResendPause = 50;
-    /**
-     * lock for sendBuffer
-     */
-    private final Lock sendBufferLock = new ReentrantLock();
-    /**
-     * For each host_id, list of packets waiting to be sent (up to MAX_MESSAGES_IN_PACKET)
-     * take <code>limitLock</code> before modifying the lists or adding new ones
-     */
-    private final List<List<T>> sendBuffer;
 
-
-    /**
-     * <b>always lock <code>limitLock</code> first</b>
-     * Number of packets inserted in the send queue
-     * Every new packet to be sent is given as id packetCount++
-     */
-    private int packetCount = 0;
+    private final AtomicInteger packetCount = new AtomicInteger(0);
     private final BlockingDeque<NetworkTypes.Sendable> senderQueue = new LinkedBlockingDeque<>();
     private final ConcurrentLinkedQueue<Sendable> resendWaitingQueue = new ConcurrentLinkedQueue<>();
     private final Set<Integer> confirmed = ConcurrentHashMap.newKeySet();
@@ -90,9 +74,6 @@ public class PerfectLink<T> {
         this.port = port;
         this.hosts = hosts;
         this.serializer = new MSerializer<>(messageSerializer, messageDeserializer, messageSize);
-        List<List<T>> tmpBuffer = new ArrayList<>(hosts.size());
-        for (int i = 0; i < hosts.size(); i++) tmpBuffer.add(new ArrayList<>(MAX_MESSAGES_IN_PACKET));
-        this.sendBuffer = Collections.unmodifiableList(tmpBuffer);
         this.deliver = deliver;
 
         // Start sender workers
@@ -127,39 +108,8 @@ public class PerfectLink<T> {
      * @param content message to be sent
      */
     public void send(T content, Host to) {
-        sendBufferLock.lock();
-
-        try {
-            List<T> buff = sendBuffer.get(to.getId() - 1);
-            assert (buff.size() < MAX_MESSAGES_IN_PACKET);   // It can't be MAX_MESSAGES_IN_PACKET if I always send when full
-
-            buff.add(content);
-
-            if (buff.size() == MAX_MESSAGES_IN_PACKET) {
-                Sendable se = new Sendable(new DataPacket<>(++packetCount, myId, new ArrayList<>(buff)), to);
-                sendSendable(se);
-                buff.clear();
-            }
-        } finally {
-            sendBufferLock.unlock();
-        }
-    }
-
-    public void flushMessageBuffers() {
-        sendBufferLock.lock();
-
-        try {
-            for (int i = 0; i < hosts.size(); i++) {
-                List<T> buff = sendBuffer.get(i);
-                if (buff.size() > 0) {
-                    Sendable se = new Sendable(new DataPacket<>(++packetCount, myId, new ArrayList<>(buff)), hosts.get(i));
-                    sendSendable(se);
-                    buff.clear();
-                }
-            }
-        } finally {
-            sendBufferLock.unlock();
-        }
+        Sendable se = new Sendable(new DataPacket<>(packetCount.incrementAndGet(), myId, content), to);
+        sendSendable(se);
     }
 
     /**
@@ -212,7 +162,7 @@ public class PerfectLink<T> {
 
             // Exponential backoff logic
             double avgSentCount = sentTrySum / packetCount;
-            if (packetCount > 2000) { // The algorithm is quite unstable when the queue is empty
+            if (packetCount > hosts.size() || packetCount > 2000) { // The algorithm is quite unstable when the queue is empty
                 if (avgSentCount > BACKOFF_INCREASE_LOWERBOUND) {
                     currentResendPause = Math.min(MAX_RESENDPAUSE, (int) (currentResendPause * BACKOFF_BASE_UP));
 //                    if (currentResendPause > 40) {
@@ -225,10 +175,6 @@ public class PerfectLink<T> {
                     }
                 }
             }
-
-            // Flush buffers cause doing it in the upper level is a mess
-            // TODO: where can I move this?
-            flushMessageBuffers();
         }
     }
 
@@ -320,17 +266,18 @@ public class PerfectLink<T> {
                     if (!serializer.isDatapacket(buff)) {
                         AckPacket ap = serializer.deserializeAckPacket(buff);
                         confirmed.add(ap.n);
+
 //                        System.out.println("Received ack for packet " + ap.n);
                     } else {
                         DataPacket<T> dp = serializer.deserializeDataPacket(buff);
+
+//                        System.out.println("Received message " + dp.n + " containing " + dp.data + " from " + dp.from);
 
                         sendAckForPacket(dp);
 
                         if (!deliveredSet.contains(new ReceivedPacket(dp))) {
                             deliveredSet.add(new ReceivedPacket(dp));
-                            for (T message : dp.data) {
-                                deliver.accept(new ReceivedMessage<>(message, dp.from));
-                            }
+                            deliver.accept(new ReceivedMessage<>(dp.data, dp.from));
                         }
                     }
                 }
