@@ -71,7 +71,7 @@ public class BufferedFIFOBroadcast<T> {
 
     public void flushBuffers() {
         if (!buffer.isEmpty()) {
-            fifo.broadcast(buffer);
+            fifo.broadcast(new ArrayList<>(buffer));
             buffer.clear();
         }
     }
