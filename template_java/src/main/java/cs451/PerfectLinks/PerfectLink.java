@@ -38,11 +38,12 @@ public class PerfectLink<T> {
     /**
      * Maximum value the resend pause can assume
      */
-    private static final int MAX_RESENDPAUSE = 5000;
+    private static final int MAX_RESENDPAUSE = 1000;
     /**
      * Maximum number of packages to be sent by <code>resenderRoutine</code> before sleeping
      */
-    private static final int MAX_SEND_AT_ONCE = 250;
+    private static final int MAX_SEND_AT_ONCE = 50;
+    private static final int HISTORY_SIZE = 1000;
 
     private final int myId;
     private final int port;
@@ -137,6 +138,10 @@ public class PerfectLink<T> {
     @SuppressWarnings("BusyWait")
     private void resenderRoutine() {
         Sendable s;
+        int[] history = new int[HISTORY_SIZE];
+        // init history to 1s
+        Arrays.fill(history, 1);
+        int historyIndex = 0;
         while (true) {
             try {
                 Thread.sleep(currentResendPause);
@@ -144,12 +149,12 @@ public class PerfectLink<T> {
                 System.out.println("Resender routine stopped.");
             }
 
-            int packetCount = 0;
-            double sentTrySum = 0;
-            while ((s = resendWaitingQueue.poll()) != null && packetCount < MAX_SEND_AT_ONCE) {
+            int sentCount = 0;
+            while ((s = resendWaitingQueue.poll()) != null && sentCount < MAX_SEND_AT_ONCE) {
+                sentCount++;
                 // gather statistics for incremental backoff
-                packetCount++;
-                sentTrySum += s.tryCount;
+                history[historyIndex] = s.tryCount;
+                historyIndex = (historyIndex + 1) % HISTORY_SIZE;
 
                 if (confirmed.contains(s.n)) {
                     confirmed.remove(s.n); // No need to keep track of this package anymore
@@ -160,19 +165,19 @@ public class PerfectLink<T> {
                 }
             }
 
-            // Exponential backoff logic
-            double avgSentCount = sentTrySum / packetCount;
-            if (packetCount > hosts.size() || packetCount > 2000) { // The algorithm is quite unstable when the queue is empty
-                if (avgSentCount > BACKOFF_INCREASE_LOWERBOUND) {
-                    currentResendPause = Math.min(MAX_RESENDPAUSE, (int) (currentResendPause * BACKOFF_BASE_UP));
-//                    if (currentResendPause > 40) {
-                    System.out.println("[" + myId + "] Incrementing backoff delay to " + currentResendPause + ", sent " + this.packetCount);
-//                    }
-                } else if (avgSentCount < BACKOFF_DECREASE_UPPERBOUND) {
-                    currentResendPause = Math.max(MIN_RESENDPAUSE, (int) (currentResendPause / BACKOFF_BASE_DOWN));
-                    if (currentResendPause > MIN_RESENDPAUSE) {
-                        System.out.println("[" + myId + "] Decrementing backoff delay to " + currentResendPause + ", sent " + this.packetCount);
-                    }
+            // avgSentCount = sum of sentCount / HISTORY_SIZE, done with for loop
+            double avgSentCount = 0;
+            for (int i = 0; i < HISTORY_SIZE; i++) {
+                avgSentCount += history[i];
+            }
+            avgSentCount /= HISTORY_SIZE;
+            if (avgSentCount > BACKOFF_INCREASE_LOWERBOUND) {
+                currentResendPause = Math.min(MAX_RESENDPAUSE, (int) (currentResendPause * BACKOFF_BASE_UP));
+                System.out.println("[" + myId + "] Incrementing backoff delay to " + currentResendPause + ", sent " + this.packetCount);
+            } else if (avgSentCount < BACKOFF_DECREASE_UPPERBOUND) {
+                currentResendPause = Math.max(MIN_RESENDPAUSE, (int) (currentResendPause / BACKOFF_BASE_DOWN));
+                if (currentResendPause > MIN_RESENDPAUSE) {
+                    System.out.println("[" + myId + "] Decrementing backoff delay to " + currentResendPause + ", sent " + this.packetCount);
                 }
             }
         }
