@@ -2,8 +2,6 @@ package cs451.PerfectLinks;
 
 import cs451.Parser.Host;
 
-import java.util.List;
-
 /**
  * Types that get sent through UDP (serializable)
  */
@@ -113,7 +111,6 @@ public class NetworkTypes {
         public final Host to;
         public int tryCount = 0;
         public NetworkPacket message;
-        public byte[] serialized;
 
         public Sendable(NetworkPacket message, Host to) {
             this.n = message.getN();

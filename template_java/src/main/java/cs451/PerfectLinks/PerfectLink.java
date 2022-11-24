@@ -213,10 +213,7 @@ public class PerfectLink<T> {
                     boolean isAck = true;
                     // prepare network packet
                     if (se.message instanceof DataPacket) {
-                        if (se.serialized == null) {
-                            se.serialized = serializer.serialize((DataPacket) se.message);
-                        }
-                        buf = se.serialized;
+                        buf = serializer.serialize((DataPacket) se.message);
                         isAck = false;
                     } else {
                         buf = serializer.serialize((AckPacket)se.message);
