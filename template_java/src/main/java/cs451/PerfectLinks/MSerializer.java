@@ -37,9 +37,7 @@ public class MSerializer<T> {
     }
 
     public boolean isDatapacket(byte[] data) {
-        ByteBuffer bb = ByteBuffer.wrap(data);
-        byte out = bb.get();
-        return (int)(out) > 0;
+        return (int)(data[0]) > 0;
     }
 
     public NetworkTypes.DataPacket<T> deserializeDataPacket(byte[] data) {
