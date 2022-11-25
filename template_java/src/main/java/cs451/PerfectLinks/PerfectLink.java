@@ -34,7 +34,7 @@ public class PerfectLink<T> {
     /**
      * Minimum value the resend pause can assume
      */
-    private static final int MIN_RESENDPAUSE = 10;
+    private static final int MIN_RESENDPAUSE = 20;
     /**
      * Maximum value the resend pause can assume
      */
@@ -42,7 +42,7 @@ public class PerfectLink<T> {
     /**
      * Maximum number of packages to be sent by <code>resenderRoutine</code> before sleeping
      */
-    private static final int MAX_SEND_AT_ONCE = 50;
+    private static final int MAX_SEND_AT_ONCE = 200;
     private static final int HISTORY_SIZE = 20;
 
     private final int myId;
