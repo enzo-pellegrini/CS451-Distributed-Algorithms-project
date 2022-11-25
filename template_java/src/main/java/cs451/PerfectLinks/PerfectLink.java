@@ -11,6 +11,8 @@ import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -59,7 +61,8 @@ public class PerfectLink<T> {
 
     private final AtomicInteger packetCount = new AtomicInteger(0);
     private final BlockingDeque<NetworkTypes.Sendable> senderQueue = new LinkedBlockingDeque<>();
-    private final ConcurrentLinkedQueue<Sendable> resendWaitingQueue = new ConcurrentLinkedQueue<>();
+    private final Lock resendQueueLock = new ReentrantLock();
+    private final List<Queue<Sendable>> resendWaitingQueues;
     private final Set<Integer> confirmed = ConcurrentHashMap.newKeySet();
     private final Set<ReceivedPacket> deliveredSet = Collections.synchronizedSet(new HashSet<>());
     private final Consumer<ReceivedMessage<T>> deliver;
@@ -76,6 +79,13 @@ public class PerfectLink<T> {
         this.hosts = hosts;
         this.serializer = new MSerializer<>(messageSerializer, messageDeserializer, messageSize);
         this.deliver = deliver;
+
+        // Initialize the resendWaitingQueues
+        List<Queue<Sendable>> tmp = new ArrayList<>(hosts.size());
+        for (int i = 0; i < hosts.size(); i++) {
+            tmp.add(new LinkedList<>());
+        }
+        resendWaitingQueues = Collections.unmodifiableList(tmp);
 
         // Start sender workers
         for (int i = 0; i < SENDER_COUNT; i++) {
@@ -110,7 +120,7 @@ public class PerfectLink<T> {
      */
     public void send(T content, Host to) {
         Sendable se = new Sendable(new DataPacket<>(packetCount.incrementAndGet(), myId, content), to);
-        sendSendable(se);
+        sendSendable(se, to.getId());
     }
 
     /**
@@ -119,8 +129,14 @@ public class PerfectLink<T> {
      *
      * @param se Sendable to be scheduled
      */
-    private void sendSendable(Sendable se) {
-        resendWaitingQueue.offer(se);
+    private void sendSendable(Sendable se, int hostId) {
+        resendQueueLock.lock();
+
+        try {
+            resendWaitingQueues.get(hostId - 1).offer(se);
+        } finally {
+            resendQueueLock.unlock();
+        }
     }
 
     /**
@@ -133,6 +149,23 @@ public class PerfectLink<T> {
         }
         receiverThread.interrupt();
         resendTimer.interrupt();
+    }
+
+    @SuppressWarnings("ForLoopReplaceableByForEach")
+    private Sendable getSendableRoundRobin() {
+        Sendable se = null;
+        resendQueueLock.lock();
+        try {
+            for (int i = 0; i < resendWaitingQueues.size(); i++) {
+                se = resendWaitingQueues.get(i).poll();
+                if (se != null) {
+                    break;
+                }
+            }
+        } finally {
+            resendQueueLock.unlock();
+        }
+        return se;
     }
 
     @SuppressWarnings("BusyWait")
@@ -151,7 +184,7 @@ public class PerfectLink<T> {
 
             int sentCount = 0;
             double average = 0;
-            while ((s = resendWaitingQueue.poll()) != null && sentCount < MAX_SEND_AT_ONCE) {
+            while ((s = getSendableRoundRobin()) != null && sentCount < MAX_SEND_AT_ONCE) {
 
                 if (confirmed.contains(s.n)) {
                     confirmed.remove(s.n); // No need to keep track of this package anymore
@@ -236,7 +269,7 @@ public class PerfectLink<T> {
                     if (!isAck) {
                         // increment tryCount and put on resendQueue
                         se.tryCount++;
-                        resendWaitingQueue.offer(se); // Possible problem: if this thread crashes, se will be lost
+                        sendSendable(se, se.to.getId());
                     }
                 }
             }
