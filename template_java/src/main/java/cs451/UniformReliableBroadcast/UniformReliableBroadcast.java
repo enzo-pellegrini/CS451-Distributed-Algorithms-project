@@ -18,9 +18,6 @@ import java.util.function.Function;
  */
 @SuppressWarnings("FieldCanBeLocal")
 public class UniformReliableBroadcast<T> {
-    private final int MAX_HANDLING_UNDERNEATH = 2_500;
-    private final int MAX_HANDLING;
-
     private final AtomicInteger sentCounter = new AtomicInteger(0);
 
     private final PerfectLink<URPacket<T>> pl;
@@ -32,10 +29,6 @@ public class UniformReliableBroadcast<T> {
     private final Map<URPacket<T>, Integer> inFlight = new HashMap<>();
     private final Set<DeliveredMessage> delivered = new HashSet<>();
 
-    private final Lock handlingNowLock = new ReentrantLock();
-    private final Condition canHandleMore = handlingNowLock.newCondition();
-
-    private int handlingNow = 0;
 
     public UniformReliableBroadcast(int myId, int port, List<Host> hosts,
                                     Consumer<ReceivedURBMessage<T>> deliver,
@@ -46,9 +39,6 @@ public class UniformReliableBroadcast<T> {
         this.myId = myId;
         this.hosts = hosts;
         this.numHosts = hosts.size();
-
-        // Mother of all cheats
-        this.MAX_HANDLING = Math.max(1, MAX_HANDLING_UNDERNEATH / (hosts.size() * hosts.size()));
 
         this.deliver = deliver;
 
@@ -74,20 +64,6 @@ public class UniformReliableBroadcast<T> {
      */
     public void broadcast(T message) {
         URPacket<T> packet = new URPacket<>(sentCounter.incrementAndGet(), myId, message);
-
-        handlingNowLock.lock();
-        try {
-            while (handlingNow >= MAX_HANDLING) {
-                try {
-                    canHandleMore.await();
-                } catch (InterruptedException e) {
-                    throw new RuntimeException(e);
-                }
-            }
-        } finally {
-            handlingNow++;
-            handlingNowLock.unlock();
-        }
 
         inFlightLock.lock();
         try {
@@ -132,16 +108,8 @@ public class UniformReliableBroadcast<T> {
         if (shouldBroadcast) bestEffortBroadcast(packet);
         if (shouldDeliver) {
             deliver.accept(new ReceivedURBMessage<>(packet.from, packet.n, packet.message));
-
-            if (packet.from == myId) {
-                handlingNowLock.lock();
-                try {
-                    handlingNow--;
-                    canHandleMore.signal();
-                } finally {
-                    handlingNowLock.unlock();
-                }
-            }
         }
+
+//        System.out.println("URB: Delivered: " + packet.from + " " + packet.n);
     }
 }

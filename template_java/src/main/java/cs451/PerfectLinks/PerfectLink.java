@@ -44,8 +44,13 @@ public class PerfectLink<T> {
     /**
      * Maximum number of packages to be sent by <code>resenderRoutine</code> before sleeping
      */
-    private static final int MAX_SEND_AT_ONCE = 200;
+    private static final int MAX_SEND_AT_ONCE_PER_HOST = 20;
+    private static final int MAX_SEND_AT_ONCE_MAX = 500;
+    private static final int MAX_SEND_AT_ONCE_MIN = 200;
     private static final int HISTORY_SIZE = 20;
+
+    private final int MAX_SEND_AT_ONCE;
+    private final double PROBABLITY_RANDOM_QUEUE;
 
     private final int myId;
     private final int port;
@@ -80,22 +85,33 @@ public class PerfectLink<T> {
         this.serializer = new MSerializer<>(messageSerializer, messageDeserializer, messageSize);
         this.deliver = deliver;
 
+        this.MAX_SEND_AT_ONCE = Math.max(MAX_SEND_AT_ONCE_MIN, Math.min(MAX_SEND_AT_ONCE_MAX, hosts.size() * MAX_SEND_AT_ONCE_PER_HOST));
+        this.PROBABLITY_RANDOM_QUEUE = Math.min(0.1, (((double)hosts.size()) / 10.0) * 0.01);
+        System.out.println("Probability of random queue: " + PROBABLITY_RANDOM_QUEUE);
+
         // Initialize the resendWaitingQueues
         List<Queue<Sendable>> tmp = new ArrayList<>(hosts.size());
         for (int i = 0; i < hosts.size(); i++) {
-            tmp.add(new LinkedList<>());
+            if (i+1 == myId) {
+                tmp.add(null);
+            } else {
+                tmp.add(new LinkedList<>());
+            }
         }
         resendWaitingQueues = Collections.unmodifiableList(tmp);
 
         // Start sender workers
         for (int i = 0; i < SENDER_COUNT; i++) {
             senderThreads[i] = new Sender(i);
+            senderThreads[i].setName("Sender " + i);
         }
 
         // Start receiver worker
         receiverThread = new Receiver();
+        receiverThread.setName("Receiver");
 
         resendTimer = new Thread(this::resenderRoutine);
+        resendTimer.setName("Resender");
     }
 
     /**
@@ -151,21 +167,54 @@ public class PerfectLink<T> {
         resendTimer.interrupt();
     }
 
-    @SuppressWarnings("ForLoopReplaceableByForEach")
-    private Sendable getSendableRoundRobin() {
-        Sendable se = null;
+    private Sendable getSendableFromSmallest() {
         resendQueueLock.lock();
         try {
+            int min = Integer.MAX_VALUE;
+            int minIndex = -1;
             for (int i = 0; i < resendWaitingQueues.size(); i++) {
-                se = resendWaitingQueues.get(i).poll();
-                if (se != null) {
-                    break;
+                if (resendWaitingQueues.get(i) != null && !resendWaitingQueues.get(i).isEmpty()) {
+                    int size = resendWaitingQueues.get(i).size();
+                    if (size < min) {
+                        min = size;
+                        minIndex = i;
+                    }
                 }
             }
+            if (minIndex == -1) {
+                return null;
+            }
+            return resendWaitingQueues.get(minIndex).poll();
         } finally {
             resendQueueLock.unlock();
         }
-        return se;
+    }
+
+    private Sendable getSendableFromRandom() {
+        // get sendable from random queue that is not empty
+        resendQueueLock.lock();
+        try {
+            int index = (int) (Math.random() * resendWaitingQueues.size());
+            for (int i = 0; i < resendWaitingQueues.size(); i++) {
+                if (resendWaitingQueues.get(index) != null && !resendWaitingQueues.get(index).isEmpty()) {
+                    return resendWaitingQueues.get(index).poll();
+                }
+                index = (index + 1) % resendWaitingQueues.size();
+            }
+            return null;
+        } finally {
+            resendQueueLock.unlock();
+        }
+    }
+
+    private Sendable getSendableRoundRobin() {
+        // get from the smallest queue 9/10 times, otherwise get from random queue
+        if (Math.random() < 1 - PROBABLITY_RANDOM_QUEUE) {
+//            System.out.println("Not Using random queue");
+            return getSendableFromSmallest();
+        } else {
+            return getSendableFromRandom();
+        }
     }
 
     @SuppressWarnings("BusyWait")
