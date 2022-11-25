@@ -43,7 +43,7 @@ public class PerfectLink<T> {
      * Maximum number of packages to be sent by <code>resenderRoutine</code> before sleeping
      */
     private static final int MAX_SEND_AT_ONCE = 50;
-    private static final int HISTORY_SIZE = 1000;
+    private static final int HISTORY_SIZE = 20;
 
     private final int myId;
     private final int port;
@@ -138,7 +138,7 @@ public class PerfectLink<T> {
     @SuppressWarnings("BusyWait")
     private void resenderRoutine() {
         Sendable s;
-        int[] history = new int[HISTORY_SIZE];
+        double[] history = new double[HISTORY_SIZE];
         // init history to 1s
         Arrays.fill(history, 1);
         int historyIndex = 0;
@@ -150,20 +150,23 @@ public class PerfectLink<T> {
             }
 
             int sentCount = 0;
+            double average = 0;
             while ((s = resendWaitingQueue.poll()) != null && sentCount < MAX_SEND_AT_ONCE) {
-                sentCount++;
-                // gather statistics for incremental backoff
-                history[historyIndex] = s.tryCount;
-                historyIndex = (historyIndex + 1) % HISTORY_SIZE;
 
                 if (confirmed.contains(s.n)) {
                     confirmed.remove(s.n); // No need to keep track of this package anymore
-
                 } else {
-                    senderQueue.offer(s);
+                    sentCount++;
+                    // gather statistics for incremental backoff
+                    average += s.tryCount;
 
+                    senderQueue.offer(s);
                 }
             }
+            average /= sentCount;
+
+            history[historyIndex] = average > 1 ? average : 1;
+            historyIndex = (historyIndex + 1) % HISTORY_SIZE;
 
             // avgSentCount = sum of sentCount / HISTORY_SIZE, done with for loop
             double avgSentCount = 0;
