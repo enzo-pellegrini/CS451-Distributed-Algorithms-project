@@ -28,7 +28,7 @@ public class FIFOBroadcast<T> {
 
     private final UniformReliableBroadcast<T> urb;
     private final Consumer<ReceivedMessage<T>> deliver;
-    private final List<SortedSet<ReceivedURBMessage<T>>> inFlight;
+    private final List<PriorityQueue<ReceivedURBMessage<T>>> inFlight;
     private final Lock inFlightLock = new ReentrantLock();
 
     // Limit the number of messages we handle at once
@@ -36,7 +36,7 @@ public class FIFOBroadcast<T> {
     private final Condition canHandleMore = handlingNowLock.newCondition();
     private final int MAX_HANDLING;
     private final int MAX_HANDLING_UNDERNEATH = 2_500;
-    private final int MAX_HERE = 25;
+    private final int MAX_HERE = 100;
     private int handlingNow = 0;
     private final int myId;
     private final int[] lastDelivered;
@@ -52,9 +52,9 @@ public class FIFOBroadcast<T> {
         this.MAX_HANDLING = Math.min(MAX_HERE, Math.max(1, MAX_HANDLING_UNDERNEATH / (hosts.size() * hosts.size())));
         this.myId = myId;
 
-        List<SortedSet<ReceivedURBMessage<T>>> tmpInFlight = new ArrayList<>();
+        List<PriorityQueue<ReceivedURBMessage<T>>> tmpInFlight = new ArrayList<>();
         for (int i = 0; i < hosts.size(); i++) {
-            tmpInFlight.add(new TreeSet<>());
+            tmpInFlight.add(new PriorityQueue<>());
         }
         this.inFlight = Collections.unmodifiableList(tmpInFlight);
 
@@ -109,13 +109,13 @@ public class FIFOBroadcast<T> {
                 deliver.accept(new ReceivedMessage<>(packet.from, packet.message));
 
                 lastDelivered[packet.from - 1] = packet.n;
-                inFlight.get(packet.from - 1).remove(packet);
+                inFlight.get(packet.from - 1).poll();
 
 
                 if (inFlight.get(packet.from - 1).isEmpty()) {
                     break;
                 } else {
-                    packet = inFlight.get(packet.from - 1).first();
+                    packet = inFlight.get(packet.from - 1).peek();
                 }
             }
         } finally {
