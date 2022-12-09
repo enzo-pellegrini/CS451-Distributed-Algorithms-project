@@ -3,8 +3,9 @@ package cs451.Printer;
 import java.io.FileWriter;
 import java.io.IOException;
 
-public class OutputWriter extends Printer {
-    public OutputWriter(String outputPath) throws IOException {
+
+public class BroadcastOutputWriter extends Printer {
+    public BroadcastOutputWriter(String outputPath) throws IOException {
         super(new FileWriter(outputPath));
     }
 
@@ -20,7 +21,8 @@ public class OutputWriter extends Printer {
         try {
             println("b " + seqNr);
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            e.printStackTrace();
+            System.out.println("Error while writing to output file");
         }
     }
 }

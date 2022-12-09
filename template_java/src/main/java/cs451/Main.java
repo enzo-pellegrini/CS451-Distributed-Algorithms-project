@@ -1,25 +1,23 @@
 package cs451;
 
-import cs451.FIFOBroadcast.FIFOBroadcast;
-import cs451.Parser.FIFOParser;
+import cs451.LatticeAgreement.ConsensusManager;
 import cs451.Parser.Host;
-import cs451.Printer.OutputWriter;
+import cs451.Parser.LatticeParser;
+import cs451.Printer.LatticeOutputWriter;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.time.Instant;
+import java.util.List;
 
 public class Main {
-    static OutputWriter outputWriter;
-    static BufferedFIFOBroadcast<Integer> fifo;
-
-    static Instant start;
+    static LatticeOutputWriter outputWriter;
+    static ConsensusManager<Integer> consensusManager;
 
     private static void handleSignal() {
         //immediately stop network packet processing
         System.out.println("Immediately stopping network packet processing.");
 
-        fifo.interruptAll();
+        consensusManager.interruptAll();
 
         //write/flush output file if necessary
         System.out.println("Writing output.");
@@ -35,7 +33,7 @@ public class Main {
     }
 
     public static void main(String[] args) throws InterruptedException {
-        FIFOParser parser = new FIFOParser(args);
+        LatticeParser parser = new LatticeParser(args);
         parser.parse();
 
         initSignalHandlers();
@@ -66,27 +64,22 @@ public class Main {
         System.out.println("Doing some initialization\n");
 
         try {
-            outputWriter = new OutputWriter(parser.output());
+            outputWriter = new LatticeOutputWriter(parser.output());
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
 
 
-        System.out.println("Broadcasting " + parser.numMessages() + " messages and delivering messages...\n");
+        System.out.println("Starting " + parser.getP() + " proposals...\n");
 
-        fifo = new BufferedFIFOBroadcast<>(parser.myId(), parser.hosts().get(parser.myId() - 1).getPort(), parser.hosts(),
-                packet -> outputWriter.delivered(packet.from, packet.message),
-                (message, bb) -> bb.putInt(message),
-                ByteBuffer::getInt,
-                Integer.BYTES);
-        fifo.startThreads();
+        consensusManager = new ConsensusManager<>(parser.myId(), parser.hosts().get(parser.myId() - 1).getPort(),
+                parser.hosts(), outputWriter::decided, (message, bb) -> bb.putInt(message), ByteBuffer::getInt, Integer.BYTES,
+                parser.getP(), parser.getVs(), parser.getDs());
+        consensusManager.startThreads();
 
-        for (int i = 0; i < parser.numMessages(); i++) {
-            fifo.broadcast(i + 1);
-            outputWriter.broadcasted(i + 1);
+        for (List<Integer> proposal : parser.getProposals()) {
+            consensusManager.propose(proposal);
         }
-        fifo.flushBuffers();
-        System.out.println("Done sending?");
 
         // After a process finishes broadcasting,
         // it waits forever for the delivery of messages.

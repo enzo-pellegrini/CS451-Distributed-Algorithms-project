@@ -2,6 +2,8 @@ package cs451.PerfectLinks;
 
 import cs451.Parser.Host;
 
+import java.util.List;
+
 /**
  * Types that get sent through UDP (serializable)
  */
@@ -12,14 +14,14 @@ public class NetworkTypes {
     static class DataPacket<T> extends NetworkPacket {
         public final int n;
         public final int from;
-        public final T data;
+        public final List<T> data;
 
         @Override
         public int getN() {
             return n;
         }
 
-        public DataPacket(int n, int from, T data) {
+        public DataPacket(int n, int from, List<T> data) {
             this.n = n;
             this.from = from;
             this.data = data;

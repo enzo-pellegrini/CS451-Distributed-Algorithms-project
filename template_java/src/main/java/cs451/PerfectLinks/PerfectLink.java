@@ -11,6 +11,8 @@ import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -50,6 +52,8 @@ public class PerfectLink<T> {
     private final List<Host> hosts;
 
 
+    private final Lock sendBufferLock = new ReentrantLock();
+    private final List<List<T>> sendBuffers;
 
     /**
      * time to wait before resending the packets waiting to be resent
@@ -77,6 +81,12 @@ public class PerfectLink<T> {
         this.serializer = new MSerializer<>(messageSerializer, messageDeserializer, messageSize);
         this.deliver = deliver;
 
+        List<List<T>> tmp = new ArrayList<>();
+        for (int i = 0; i < hosts.size(); i++) {
+            tmp.add(new ArrayList<>(8));
+        }
+        this.sendBuffers = Collections.unmodifiableList(tmp);
+
         // Start sender workers
         for (int i = 0; i < SENDER_COUNT; i++) {
             senderThreads[i] = new Sender(i);
@@ -92,7 +102,7 @@ public class PerfectLink<T> {
      * Start all needed threads
      */
     public void startThreads() {
-        for (int i=0; i < SENDER_COUNT; i++) {
+        for (int i = 0; i < SENDER_COUNT; i++) {
             senderThreads[i].start();
 
             receiverThread.start();
@@ -109,8 +119,38 @@ public class PerfectLink<T> {
      * @param content message to be sent
      */
     public void send(T content, Host to) {
-        Sendable se = new Sendable(new DataPacket<>(packetCount.incrementAndGet(), myId, content), to);
-        sendSendable(se);
+        sendBufferLock.lock();
+
+        try {
+            int toId = to.getId();
+            List<T> buffer = sendBuffers.get(toId - 1);
+            buffer.add(content);
+            if (buffer.size() >= 8) {
+                sendBuffer(toId);
+            }
+        } finally {
+            sendBufferLock.unlock();
+        }
+    }
+
+    public void flushBuffers() {
+        sendBufferLock.lock();
+        try {
+            for (int i = 0; i < sendBuffers.size(); i++) {
+                if (!sendBuffers.get(i).isEmpty()) {
+                    sendBuffer(i + 1);
+                }
+            }
+        } finally {
+            sendBufferLock.unlock();
+        }
+    }
+
+    private void sendBuffer(int hostId) {
+        List<T> buffer = sendBuffers.get(hostId - 1);
+        sendSendable(new Sendable(new DataPacket<>(packetCount.incrementAndGet(), myId,
+                new ArrayList<>(buffer)), hosts.get(hostId - 1)));
+        buffer.clear();
     }
 
     /**
@@ -135,7 +175,7 @@ public class PerfectLink<T> {
         resendTimer.interrupt();
     }
 
-    @SuppressWarnings("BusyWait")
+    @SuppressWarnings({"BusyWait", "StatementWithEmptyBody"})
     private void resenderRoutine() {
         Sendable s;
         double[] history = new double[HISTORY_SIZE];
@@ -148,6 +188,8 @@ public class PerfectLink<T> {
             } catch (InterruptedException e) {
                 System.out.println("Resender routine stopped.");
             }
+
+            flushBuffers();
 
             int sentCount = 0;
             double average = 0;
@@ -174,13 +216,16 @@ public class PerfectLink<T> {
                 avgSentCount += history[i];
             }
             avgSentCount /= HISTORY_SIZE;
+            if (sentCount < MAX_SEND_AT_ONCE) {
+                continue;
+            }
             if (avgSentCount > BACKOFF_INCREASE_LOWERBOUND) {
                 currentResendPause = Math.min(MAX_RESENDPAUSE, (int) (currentResendPause * BACKOFF_BASE_UP));
-                System.out.println("[" + myId + "] Incrementing backoff delay to " + currentResendPause + ", sent " + this.packetCount);
+//                System.out.println("[" + myId + "] Incrementing backoff delay to " + currentResendPause + ", sent " + this.packetCount);
             } else if (avgSentCount < BACKOFF_DECREASE_UPPERBOUND) {
                 currentResendPause = Math.max(MIN_RESENDPAUSE, (int) (currentResendPause / BACKOFF_BASE_DOWN));
                 if (currentResendPause > MIN_RESENDPAUSE) {
-                    System.out.println("[" + myId + "] Decrementing backoff delay to " + currentResendPause + ", sent " + this.packetCount);
+//                    System.out.println("[" + myId + "] Decrementing backoff delay to " + currentResendPause + ", sent " + this.packetCount);
                 }
             }
         }
@@ -219,7 +264,7 @@ public class PerfectLink<T> {
                         buf = serializer.serialize((DataPacket) se.message);
                         isAck = false;
                     } else {
-                        buf = serializer.serialize((AckPacket)se.message);
+                        buf = serializer.serialize((AckPacket) se.message);
                     }
                     DatagramPacket p = new DatagramPacket(buf, buf.length, InetAddress.getByName(se.to.getIp()), se.to.getPort());
 
@@ -282,7 +327,9 @@ public class PerfectLink<T> {
 
                         if (!deliveredSet.contains(new ReceivedPacket(dp))) {
                             deliveredSet.add(new ReceivedPacket(dp));
-                            deliver.accept(new ReceivedMessage<>(dp.data, dp.from));
+                            for (T message : dp.data) {
+                                deliver.accept(new ReceivedMessage<>(message, dp.from));
+                            }
                         }
                     }
                 }

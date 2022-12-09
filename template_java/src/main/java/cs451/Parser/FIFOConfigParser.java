@@ -7,6 +7,7 @@ import java.io.IOException;
 public class FIFOConfigParser extends ConfigParser {
     private int numMessages;
 
+    @Override
     public boolean populate(String path) {
         try (BufferedReader br = new BufferedReader(new FileReader(path))) {
             String line = br.readLine();
