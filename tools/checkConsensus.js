@@ -78,18 +78,24 @@ for (let i = 0; i < nConsensus; i++) {
   }
 }
 
-const allProposed = proposed
-  .map((f) => f.filter((s) => s !== undefined))
-  .map((f) => f.reduce((a, b) => new Set([...a, ...b]), new Set()));
+// set of all proposed values across all files for each consensus
+const allProposed = []
+for (let i = 0; i < nConsensus; i++) {
+  const all = new Set()
+  for (let j = 0; j < proposed.length; j++) {
+    proposed[j][i].forEach(v => all.add(v))
+  }
+  allProposed.push(all)
+}
 
 // check that all decided values are in allProposed
 for (let i = 0; i < nConsensus; i++) {
   for (let j = 0; j < decided.length; j++) {
-    if (decided[j][i] !== undefined && !isSubset(decided[j][i], allProposed[j])) {
+    if (decided[j][i] !== undefined && !isSubset(decided[j][i], allProposed[i])) {
       console.log(
         `Decided values not contained in the proposed: consensus ${j} host ${i}`
       );
-      console.log("Proposed: ", proposed[j][i]);
+      console.log("Proposed: ", allProposed[i]);
       console.log("Decided: ", decided[j][i]);
       exit(1);
     }
