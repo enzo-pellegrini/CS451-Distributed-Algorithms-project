@@ -308,8 +308,8 @@ public class PerfectLink<T> {
 
                 System.out.println("Listening on port " + port);
 
+                byte[] buff = new byte[4096];
                 while (true) {
-                    byte[] buff = new byte[512];
                     DatagramPacket p = new DatagramPacket(buff, buff.length);
                     s.receive(p);
 
