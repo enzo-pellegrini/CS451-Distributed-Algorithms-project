@@ -40,8 +40,6 @@ class ConsensusInstance<T> {
         active = true;
         activeProposalNumber++;
 
-//        System.out.println("[" + consensusNumber + "] Active proposal number: " + activeProposalNumber);
-
         broadcastProposal(proposedValue);
     }
 
@@ -102,7 +100,7 @@ class ConsensusInstance<T> {
     private void ackLogic(boolean isAck) {
         if (active) {
             if (isAck && ackCount > hosts.size() / 2) {
-                decide.accept(acceptedValue);
+                decide.accept(proposedValue);
                 active = false;
                 // broadcast decided
                 Decided decided = new Decided(consensusNumber);
@@ -115,7 +113,6 @@ class ConsensusInstance<T> {
             } else if (ackCount + nackCount > hosts.size() / 2) {
                 activeProposalNumber++;
 
-                proposedValue = acceptedValue;
                 ackCount = 0;
                 nackCount = 0;
 
@@ -128,10 +125,13 @@ class ConsensusInstance<T> {
         Set<T> copyOfProposal = new HashSet<>(proposal);
         Proposal<T> proposalPackage = new Proposal<>(consensusNumber, activeProposalNumber, copyOfProposal);
 
-        // the values in the proposal are in proposedValue, which is a subset of acceptedValue
-        // so the response will be an ack or a nack, so I will choose an ack (just means I'm the first one to reply)
-        ackCount++;
-        acceptedValue.addAll(proposal);
+        // if acceptedValue is a subset of proposal, count as ack otherwise count as nack and add difference to proposedValue
+        if (acceptedValue.containsAll(proposal)) {
+            ackCount++;
+        } else {
+            nackCount++;
+            proposedValue.addAll(acceptedValue);
+        }
 
         for (Host host : hosts) {
             if (host.getId() != myId) {
