@@ -8,3 +8,7 @@ template_java/bin/*
 example/*
 Submissions
 /**/.DS_Store
+*.zip
+.vscode
+example/*
+example/hosts
