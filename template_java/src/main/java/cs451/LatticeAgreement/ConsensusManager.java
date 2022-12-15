@@ -85,6 +85,10 @@ public class ConsensusManager<T> {
                 }
             }
             pendingMessages.remove(consensusN);
+
+            if (instance.canDie()) {
+                shots.remove(consensusN);
+            }
         } finally {
             shotLock.unlock();
         }
@@ -114,6 +118,10 @@ public class ConsensusManager<T> {
         try {
             if (shots.containsKey(consensusN)) {
                 shots.get(consensusN).handlePackage(receivedMessage.data, receivedMessage.from);
+
+                if (shots.get(consensusN).canDie()) {
+                    shots.remove(consensusN);
+                }
             } else if (consensusN >= consensusNumber) {
                 // add to pending messages
                 pendingMessages.putIfAbsent(consensusN, new ArrayDeque<>());
