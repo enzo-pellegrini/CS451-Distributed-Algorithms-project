@@ -4,7 +4,13 @@ const { exit } = require("process");
 
 // open all files given as arguments
 const fileNames = process.argv.slice(2);
-const files = fileNames
+// split filenames in two
+const [decidedFns, proposedFns] = [
+  fileNames.slice(0, fileNames.length / 2),
+  fileNames.slice(fileNames.length / 2),
+];
+
+const decided = decidedFns
   .map((fileName) => fs.readFileSync(fileName).toString())
   .map((f) => f.split("\n"))
   .map((f) =>
@@ -12,11 +18,15 @@ const files = fileNames
       .filter((l) => l.length > 0)
       .map((l) => l.split(" "))
       .map((l) => l.map((n) => parseInt(n)))
-      .map(l => new Set(l))
+      .map((l) => new Set(l))
   );
 
-const nConsensus = files.map(f => f.length).reduce((a, b) => Math.max(a, b));
-console.log(`There were ${nConsensus} consensus acrsoss ${files.length} files`);
+const nConsensus = decided
+  .map((f) => f.length)
+  .reduce((a, b) => Math.max(a, b));
+console.log(
+  `There were ${nConsensus} consensus across ${decided.length} files`
+);
 
 const isSubset = (a, b) => {
   for (const e of a) {
@@ -25,19 +35,50 @@ const isSubset = (a, b) => {
     }
   }
   return true;
-}
+};
 
-for (let i=0; i < nConsensus; i++) {
-  const decided = files.map(f => f[i]).filter(f => f !== undefined).sort((a, b) => a.size - b.size);
+for (let i = 0; i < nConsensus; i++) {
+  const interested = decided
+    .map((f) => f[i])
+    .filter((f) => f !== undefined)
+    .sort((a, b) => a.size - b.size);
   // console.log(decided.map(s => s.size))
 
   // check that all are one contained in the next
-  for (let j=0; j < decided.length - 1; j++) {
-    if (!isSubset(decided[j], decided[j+1])) {
-      console.log(`Not a subset: ${j} ${j+1}`);
+  for (let j = 0; j < interested.length - 1; j++) {
+    if (!isSubset(interested[j], interested[j + 1])) {
+      console.log(`Not a subset: ${j} ${j + 1}`);
+      exit(1);
+    }
+  }
+}
+
+const proposed = proposedFns
+  .map((fileName) => fs.readFileSync(fileName).toString())
+  .map((f) => f.split("\n").slice(1))
+  .map((f) =>
+    f
+      .filter((l) => l.length > 0)
+      .map((l) => l.split(" "))
+      .map((l) => l.map((n) => parseInt(n)))
+      .map((l) => new Set(l))
+  );
+
+// check that for each file, the proposed is a subset of the decided for each consensus
+for (let i = 0; i < nConsensus; i++) {
+  for (let j = 0; j < decided.length; j++) {
+    if (decided[j][i] !== undefined && !isSubset(proposed[j][i], decided[j][i])) {
+      console.log(
+        `Proposed values not contained in the decided: consensus ${j} host ${i}`
+      );
+      console.log("Proposed: ", proposed[j][i]);
+      console.log("Decided: ", decided[j][i]);
       exit(1);
     }
   }
 }
 
 console.log("All good");
+
+// print number of consensus for each file
+decided.forEach((f, i) => console.log(`${fileNames[i]}: ${f.length}`));
