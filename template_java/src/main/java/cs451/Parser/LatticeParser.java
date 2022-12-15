@@ -1,5 +1,6 @@
 package cs451.Parser;
 
+import java.io.IOException;
 import java.util.List;
 
 public class LatticeParser extends Parser {
@@ -30,7 +31,7 @@ public class LatticeParser extends Parser {
         return latticeConfigParser.getDs();
     }
 
-    public List<List<Integer>> getProposals() {
-        return latticeConfigParser.getProposals();
+    public List<Integer> getNextProposal() {
+        return latticeConfigParser.getNextProposal();
     }
 }

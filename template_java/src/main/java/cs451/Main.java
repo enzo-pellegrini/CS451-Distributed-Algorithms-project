@@ -77,7 +77,8 @@ public class Main {
                 parser.getP(), parser.getVs(), parser.getDs());
         consensusManager.startThreads();
 
-        for (List<Integer> proposal : parser.getProposals()) {
+        List<Integer> proposal;
+        while ((proposal = parser.getNextProposal()) != null) {
             consensusManager.propose(proposal);
         }
 
