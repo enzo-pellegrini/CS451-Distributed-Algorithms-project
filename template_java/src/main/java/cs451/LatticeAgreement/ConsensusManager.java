@@ -16,10 +16,13 @@ import java.util.function.Function;
 
 public class ConsensusManager<T> {
     final int MAX_HANDLING;
-    private final PerfectLink<ConsensusPackage> perfectLink;
-    private final int myId;
-    private final List<Host> hosts;
-    private final Consumer<Set<T>> decide;
+
+    // for child consensus instances
+    final PerfectLink<ConsensusPackage> perfectLink;
+    final int myId;
+    final List<Host> hosts;
+    final Consumer<Set<T>> decide;
+
     private int handlingNow = 0;
     private final Lock handlingNowLock = new ReentrantLock();
     private final Condition canHandleMore = handlingNowLock.newCondition();
@@ -72,7 +75,7 @@ public class ConsensusManager<T> {
 
         try {
             int consensusN = this.consensusNumber++;
-            ConsensusInstance<T> instance = new ConsensusInstance<>(consensusN, value -> onDecide(value, consensusN), perfectLink, hosts, myId);
+            ConsensusInstance<T> instance = new ConsensusInstance<>(consensusN, this);
             shots.put(consensusN, instance);
             instance.propose(proposal);
 
@@ -94,7 +97,7 @@ public class ConsensusManager<T> {
         }
     }
 
-    private void onDecide(Set<T> ts, int consensusN) {
+    void onDecide(Set<T> ts, int consensusN) {
         decisions.add(new Decision<>(consensusN, ts));
         while (!decisions.isEmpty() && decisions.peek().consensusNumber == lastDecided + 1) {
             var decision = decisions.poll();
