@@ -27,15 +27,16 @@ public class ConsensusManager<T> {
     private final Lock handlingNowLock = new ReentrantLock();
     private final Condition canHandleMore = handlingNowLock.newCondition();
 
-    private final Lock shotLock = new ReentrantLock();
+    private final Lock addShotLock = new ReentrantLock();
     private int consensusNumber = 0;
     private final Map<Integer, ConsensusInstance<T>> shots = new HashMap<>();
-    private final PriorityQueue<Decision<T>> decisions = new PriorityQueue<>(Comparator.comparingInt(d -> d.consensusNumber));
+    private final PriorityQueue<Decision<T>> decisions = new PriorityQueue<>(
+            Comparator.comparingInt(d -> d.consensusNumber));
     private int lastDecided = -1;
 
     public ConsensusManager(int myId, int port, List<Host> hosts, Consumer<Set<T>> decide,
-                            BiConsumer<T, ByteBuffer> messageSerializer, Function<ByteBuffer, T> messageDeserializer,
-                            int messageSize, int p, int vs, int ds) {
+            BiConsumer<T, ByteBuffer> messageSerializer, Function<ByteBuffer, T> messageDeserializer,
+            int messageSize, int p, int vs, int ds) {
         this.hosts = hosts;
         this.decide = decide;
         Serializer<T> serializer = new Serializer<>(messageSerializer, messageDeserializer);
@@ -70,19 +71,16 @@ public class ConsensusManager<T> {
             handlingNowLock.unlock();
         }
 
-        shotLock.lock();
+        int consensusN = this.consensusNumber++;
+        if (!shots.containsKey(consensusN)) {
+            createInstance(consensusN);
+        }
+        var instance = shots.get(consensusN);
 
-        try {
-            int consensusN = this.consensusNumber++;
-            ConsensusInstance<T> instance = new ConsensusInstance<>(consensusN, this);
-            shots.put(consensusN, instance);
-            instance.propose(proposal);
+        instance.propose(proposal);
 
-            if (instance.canDie()) {
-                shots.remove(consensusN);
-            }
-        } finally {
-            shotLock.unlock();
+        if (instance.canDie()) {
+            shots.remove(consensusN);
         }
     }
 
@@ -105,16 +103,23 @@ public class ConsensusManager<T> {
 
     private void onDeliver(NetworkTypes.ReceivedMessage<ConsensusPackage> receivedMessage) {
         int consensusN = receivedMessage.data.getConsensusNumber();
-        shotLock.lock();
+
+        if (!shots.containsKey(consensusN)) {
+            createInstance(consensusN);
+        }
+
+        shots.get(consensusN).handlePackage(receivedMessage.data, receivedMessage.from);
+    }
+
+    private void createInstance(int consensusN) {
+        addShotLock.lock();
 
         try {
             if (!shots.containsKey(consensusN)) {
                 shots.put(consensusN, new ConsensusInstance<>(consensusN, this));
             }
-
-            shots.get(consensusN).handlePackage(receivedMessage.data, receivedMessage.from);
         } finally {
-            shotLock.unlock();
+            addShotLock.unlock();
         }
     }
 }

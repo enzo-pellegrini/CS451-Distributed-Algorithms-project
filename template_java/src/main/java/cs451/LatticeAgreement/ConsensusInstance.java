@@ -28,28 +28,34 @@ class ConsensusInstance<T> {
     }
 
     public void propose(Collection<T> proposal) {
-        proposedValue.addAll(proposal);
-        active = true;
-        activeProposalNumber++;
+        synchronized (this) {
+            proposedValue.addAll(proposal);
+            active = true;
+            activeProposalNumber++;
 
-        broadcastProposal(proposedValue);
+            broadcastProposal(proposedValue);
+        }
     }
 
     @SuppressWarnings("unchecked")
     public void handlePackage(ConsensusPackage message, int senderId) {
-        if (message instanceof Ack) {
-            handleAck((Ack) message);
-        } else if (message instanceof Nack) {
-            handleNack((Nack<T>) message);
-        } else if (message instanceof Proposal) {
-            handleProposal((Proposal<T>) message, senderId);
-        } else if (message instanceof Decided) {
-            handleDecided((Decided) message);
+        synchronized (this) {
+            if (message instanceof Ack) {
+                handleAck((Ack) message);
+            } else if (message instanceof Nack) {
+                handleNack((Nack<T>) message);
+            } else if (message instanceof Proposal) {
+                handleProposal((Proposal<T>) message, senderId);
+            } else if (message instanceof Decided) {
+                handleDecided((Decided) message);
+            }
         }
     }
 
     public boolean canDie() {
-        return !active && decidedCount >= m.hosts.size();
+        synchronized (this) {
+            return !active && decidedCount >= m.hosts.size();
+        }
     }
 
     private void handleProposal(Proposal<T> proposal, int senderId) {
