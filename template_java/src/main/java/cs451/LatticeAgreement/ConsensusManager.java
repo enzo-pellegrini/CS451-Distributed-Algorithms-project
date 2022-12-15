@@ -30,7 +30,6 @@ public class ConsensusManager<T> {
     private final Lock shotLock = new ReentrantLock();
     private int consensusNumber = 0;
     private final Map<Integer, ConsensusInstance<T>> shots = new HashMap<>();
-    private final Map<Integer, Queue<NetworkTypes.ReceivedMessage<ConsensusPackage>>> pendingMessages = new HashMap<>();
     private final PriorityQueue<Decision<T>> decisions = new PriorityQueue<>(Comparator.comparingInt(d -> d.consensusNumber));
     private int lastDecided = -1;
 
@@ -79,16 +78,6 @@ public class ConsensusManager<T> {
             shots.put(consensusN, instance);
             instance.propose(proposal);
 
-            // check if there are pending messages for this consensus instance
-            Queue<NetworkTypes.ReceivedMessage<ConsensusPackage>> pending = pendingMessages.get(consensusN);
-            if (pending != null) {
-                while (!pending.isEmpty()) {
-                    NetworkTypes.ReceivedMessage<ConsensusPackage> message = pending.poll();
-                    instance.handlePackage(message.data, message.from);
-                }
-            }
-            pendingMessages.remove(consensusN);
-
             if (instance.canDie()) {
                 shots.remove(consensusN);
             }
@@ -119,17 +108,11 @@ public class ConsensusManager<T> {
         shotLock.lock();
 
         try {
-            if (shots.containsKey(consensusN)) {
-                shots.get(consensusN).handlePackage(receivedMessage.data, receivedMessage.from);
-
-                if (shots.get(consensusN).canDie()) {
-                    shots.remove(consensusN);
-                }
-            } else if (consensusN >= consensusNumber) {
-                // add to pending messages
-                pendingMessages.putIfAbsent(consensusN, new ArrayDeque<>());
-                pendingMessages.get(consensusN).add(receivedMessage);
+            if (!shots.containsKey(consensusN)) {
+                shots.put(consensusN, new ConsensusInstance<>(consensusN, this));
             }
+
+            shots.get(consensusN).handlePackage(receivedMessage.data, receivedMessage.from);
         } finally {
             shotLock.unlock();
         }
