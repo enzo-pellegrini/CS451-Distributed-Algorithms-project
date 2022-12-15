@@ -28,9 +28,12 @@ console.log(
   `There were ${nConsensus} consensus across ${decided.length} files`
 );
 
+console.log("Checking Consistency")
+
 const isSubset = (a, b) => {
   for (const e of a) {
     if (!b.has(e)) {
+      console.log(`Not a subset: ${e} not in`, b)
       return false;
     }
   }
@@ -47,11 +50,15 @@ for (let i = 0; i < nConsensus; i++) {
   // check that all are one contained in the next
   for (let j = 0; j < interested.length - 1; j++) {
     if (!isSubset(interested[j], interested[j + 1])) {
-      console.log(`Not a subset: ${j} ${j + 1}`);
+      console.log(`Not a subset: for consensus ${i}`);
+      console.log("First: ", interested[j]);
+      console.log("Second: ", interested[j + 1]);
       exit(1);
     }
   }
 }
+
+console.log("Checking Correctness")
 
 const proposed = proposedFns
   .map((fileName) => fs.readFileSync(fileName).toString())
@@ -68,8 +75,8 @@ const proposed = proposedFns
 for (let i = 0; i < nConsensus; i++) {
   for (let j = 0; j < decided.length; j++) {
     if (decided[j][i] !== undefined && !isSubset(proposed[j][i], decided[j][i])) {
-      console.log(
-        `Proposed values not contained in the decided: consensus ${j} host ${i}`
+      console.error(
+        `Proposed values not contained in the decided: consensus ${i} host ${j+1}`
       );
       console.log("Proposed: ", proposed[j][i]);
       console.log("Decided: ", decided[j][i]);
