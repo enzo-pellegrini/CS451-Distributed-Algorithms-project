@@ -7,6 +7,7 @@ import cs451.PerfectLinks.PerfectLink;
 
 import java.nio.ByteBuffer;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -29,7 +30,7 @@ public class ConsensusManager<T> {
 
     private final Lock addShotLock = new ReentrantLock();
     private int consensusNumber = 0;
-    private final Map<Integer, ConsensusInstance<T>> shots = new HashMap<>();
+    private final Map<Integer, ConsensusInstance<T>> shots = new ConcurrentHashMap<>();
     private final PriorityQueue<Decision<T>> decisions = new PriorityQueue<>(
             Comparator.comparingInt(d -> d.consensusNumber));
     private int lastDecided = -1;
@@ -41,10 +42,12 @@ public class ConsensusManager<T> {
         this.decide = decide;
         Serializer<T> serializer = new Serializer<>(messageSerializer, messageDeserializer);
         this.perfectLink = new PerfectLink<>(myId, port, hosts,
-                this::onDeliver, serializer::serialize, serializer::deserialize,
+                this::onDeliver, this::canCancel,
+                serializer::serialize,
+                serializer::deserialize,
                 messageSize * ds + Integer.BYTES * 3 + 1);
         this.myId = myId;
-        this.MAX_HANDLING = Math.max(1, 1000 / hosts.size());
+        this.MAX_HANDLING = Math.max(1, 10000 / (int)(Math.pow(hosts.size(), 2)));
     }
 
     public void startThreads() {
@@ -72,16 +75,12 @@ public class ConsensusManager<T> {
         }
 
         int consensusN = this.consensusNumber++;
-        if (!shots.containsKey(consensusN)) {
-            createInstance(consensusN);
-        }
         var instance = shots.get(consensusN);
+        if (instance == null) {
+            instance = createInstance(consensusN);
+        }
 
         instance.propose(proposal);
-
-        if (instance.canDie()) {
-            shots.remove(consensusN);
-        }
     }
 
     void onDecide(Set<T> ts, int consensusN) {
@@ -104,22 +103,44 @@ public class ConsensusManager<T> {
     private void onDeliver(NetworkTypes.ReceivedMessage<ConsensusPackage> receivedMessage) {
         int consensusN = receivedMessage.data.getConsensusNumber();
 
-        if (!shots.containsKey(consensusN)) {
-            createInstance(consensusN);
+        var instance = shots.get(consensusN);
+        if (instance == null) {
+            if (consensusN > consensusNumber) {
+                instance = createInstance(consensusN);
+            } else {
+                return;
+            }
         }
 
-        shots.get(consensusN).handlePackage(receivedMessage.data, receivedMessage.from);
+        instance.handlePackage(receivedMessage.data, receivedMessage.from);
     }
 
-    private void createInstance(int consensusN) {
-        addShotLock.lock();
+    private ConsensusInstance<T> createInstance(int consensusN) {
+        ConsensusInstance<T> shot;
 
+        addShotLock.lock();
         try {
-            if (!shots.containsKey(consensusN)) {
-                shots.put(consensusN, new ConsensusInstance<>(consensusN, this));
+            shot = shots.get(consensusN);
+            if (shot == null) {
+                shot = new ConsensusInstance<>(consensusN, this);
+                shots.put(consensusN, shot);
             }
         } finally {
             addShotLock.unlock();
         }
+
+        assert(shot != null);
+        return shot;
+    }
+
+    private boolean canCancel(ConsensusPackage p, int toId) {
+        if (p instanceof ConsensusTypes.Decided)
+            return false;
+        // handle each case
+        var shot = shots.get(p.getConsensusNumber());
+        if (shot == null)
+            return true;
+        else
+            return shot.canCancelMessage(p, toId);
     }
 }

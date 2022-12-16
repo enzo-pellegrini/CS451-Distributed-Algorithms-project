@@ -43,6 +43,7 @@ public class UniformReliableBroadcast<T> {
 
         this.pl = new PerfectLink<>(myId, port, hosts,
                 receivedMessage -> onDeliver(receivedMessage.data),
+                (m, hostId) -> false,
                 (urPacket, byteBuffer) -> urPacket.serialize(byteBuffer, messageSerializer),
                 bb -> URPacket.deserialize(bb, messageDeserializer),
                 messageSize + Integer.BYTES + 1);

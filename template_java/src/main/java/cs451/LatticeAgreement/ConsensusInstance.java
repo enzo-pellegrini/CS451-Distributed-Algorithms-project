@@ -18,11 +18,15 @@ class ConsensusInstance<T> {
     Set<T> proposedValue;
     Set<T> acceptedValue;
     private int decidedCount = 0;
+    private int[] latestProposalNumber;
 
     public ConsensusInstance(int consensusNumber, ConsensusManager<T> manager) {
         this.consensusNumber = consensusNumber;
         proposedValue = new HashSet<>();
         acceptedValue = new HashSet<>();
+
+        // latest proposal number for each host
+        latestProposalNumber = new int[manager.hosts.size()];
 
         this.m = manager;
     }
@@ -52,6 +56,23 @@ class ConsensusInstance<T> {
         }
     }
 
+    public boolean canCancelMessage(ConsensusPackage message, int toId) {
+        synchronized (this) {
+            if (message instanceof Proposal) {
+                Proposal<T> proposal = (Proposal<T>) message;
+                return proposal.proposalNumber < activeProposalNumber;
+            } else if (message instanceof Ack) {
+                Ack ack = (Ack) message;
+                return ack.proposalNumber != latestProposalNumber[toId - 1];
+            } else if (message instanceof Nack) {
+                Nack<T> nack = (Nack<T>) message;
+                return nack.proposalNumber != latestProposalNumber[toId - 1];
+            } else {
+                return false;
+            }
+        }
+    }
+
     public boolean canDie() {
         synchronized (this) {
             return !active && decidedCount >= m.hosts.size();
@@ -59,6 +80,11 @@ class ConsensusInstance<T> {
     }
 
     private void handleProposal(Proposal<T> proposal, int senderId) {
+        if (proposal.proposalNumber >= latestProposalNumber[senderId - 1]) {
+            latestProposalNumber[senderId - 1] = proposal.proposalNumber;
+        } else {
+            return;
+        }
         // if acceptedValue is a subset of proposal.values, send ack else send nack
         if (proposal.values.containsAll(acceptedValue)) {
             acceptedValue = proposal.values;

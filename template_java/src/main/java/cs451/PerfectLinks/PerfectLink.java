@@ -14,8 +14,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 public class PerfectLink<T> {
     private static final int SENDER_COUNT = 1;
@@ -26,11 +28,13 @@ public class PerfectLink<T> {
     private static final double BACKOFF_BASE_UP = 2;
     private static final double BACKOFF_BASE_DOWN = 1.5;
     /**
-     * If the average of the sentCount of the values in the resend buffer is lower than this, decrement the resendPause
+     * If the average of the sentCount of the values in the resend buffer is lower
+     * than this, decrement the resendPause
      */
     private static final double BACKOFF_DECREASE_UPPERBOUND = 1.1;
     /**
-     * If the average of the sentCount of the values in the resend buffer is higher than this, increment the resendPause
+     * If the average of the sentCount of the values in the resend buffer is higher
+     * than this, increment the resendPause
      */
     private static final double BACKOFF_INCREASE_LOWERBOUND = 1.5;
     /**
@@ -42,7 +46,8 @@ public class PerfectLink<T> {
      */
     private static final int MAX_RESENDPAUSE = 1000;
     /**
-     * Maximum number of packages to be sent by <code>resenderRoutine</code> before sleeping
+     * Maximum number of packages to be sent by <code>resenderRoutine</code> before
+     * sleeping
      */
     private static final int MAX_SEND_AT_ONCE = 200;
     private static final int HISTORY_SIZE = 20;
@@ -50,7 +55,6 @@ public class PerfectLink<T> {
     private final int myId;
     private final int port;
     private final List<Host> hosts;
-
 
     private final Lock sendBufferLock = new ReentrantLock();
     private final List<List<T>> sendBuffers;
@@ -67,6 +71,7 @@ public class PerfectLink<T> {
     private final Set<Integer> confirmed = ConcurrentHashMap.newKeySet();
     private final Set<ReceivedPacket> deliveredSet = Collections.synchronizedSet(new HashSet<>());
     private final Consumer<ReceivedMessage<T>> deliver;
+    private final BiFunction<T, Integer, Boolean> isCanceled;
     private final MSerializer<T> serializer;
 
     private final Thread[] senderThreads = new Thread[SENDER_COUNT];
@@ -74,12 +79,14 @@ public class PerfectLink<T> {
     private final Thread resendTimer;
 
     public PerfectLink(int myId, int port, List<Host> hosts, Consumer<ReceivedMessage<T>> deliver,
-                       BiConsumer<T, ByteBuffer> messageSerializer, Function<ByteBuffer, T> messageDeserializer, int messageSize) {
+            BiFunction<T, Integer, Boolean> isCanceled,
+            BiConsumer<T, ByteBuffer> messageSerializer, Function<ByteBuffer, T> messageDeserializer, int messageSize) {
         this.myId = myId;
         this.port = port;
         this.hosts = hosts;
         this.serializer = new MSerializer<>(messageSerializer, messageDeserializer, messageSize);
         this.deliver = deliver;
+        this.isCanceled = isCanceled;
 
         List<List<T>> tmp = new ArrayList<>();
         for (int i = 0; i < hosts.size(); i++) {
@@ -113,7 +120,8 @@ public class PerfectLink<T> {
 
     /**
      * Add message to queue so that it's <b>eventually</b> sent
-     * Adds message to a buffer of MAX_MESSAGES_IN_PACKET packages, call <code>flushMessageBuffers</code>
+     * Adds message to a buffer of MAX_MESSAGES_IN_PACKET packages, call
+     * <code>flushMessageBuffers</code>
      * after calling <code>send</code> on all messages
      *
      * @param content message to be sent
@@ -175,7 +183,7 @@ public class PerfectLink<T> {
         resendTimer.interrupt();
     }
 
-    @SuppressWarnings({"BusyWait", "StatementWithEmptyBody"})
+    @SuppressWarnings({ "BusyWait", "StatementWithEmptyBody" })
     private void resenderRoutine() {
         Sendable s;
         double[] history = new double[HISTORY_SIZE];
@@ -198,6 +206,18 @@ public class PerfectLink<T> {
                 if (confirmed.contains(s.n)) {
                     confirmed.remove(s.n); // No need to keep track of this package anymore
                 } else {
+                    // remove all canceled messages from the packet
+                    List<T> messages = ((DataPacket<T>) s.message).data;
+                    try {
+                        final int toId = s.to.getId();
+                        messages.removeIf((m) -> isCanceled.apply(m, toId));
+                        if (messages.isEmpty()) {
+                            continue;
+                        }
+                    } catch (ConcurrentModificationException ignored) {
+                        // ignore, this is not a problem
+                    }
+
                     sentCount++;
                     // gather statistics for incremental backoff
                     average += s.tryCount;
@@ -221,11 +241,13 @@ public class PerfectLink<T> {
             }
             if (avgSentCount > BACKOFF_INCREASE_LOWERBOUND) {
                 currentResendPause = Math.min(MAX_RESENDPAUSE, (int) (currentResendPause * BACKOFF_BASE_UP));
-//                System.out.println("[" + myId + "] Incrementing backoff delay to " + currentResendPause + ", sent " + this.packetCount);
+                // System.out.println("[" + myId + "] Incrementing backoff delay to " +
+                // currentResendPause + ", sent " + this.packetCount);
             } else if (avgSentCount < BACKOFF_DECREASE_UPPERBOUND) {
                 currentResendPause = Math.max(MIN_RESENDPAUSE, (int) (currentResendPause / BACKOFF_BASE_DOWN));
                 if (currentResendPause > MIN_RESENDPAUSE) {
-//                    System.out.println("[" + myId + "] Decrementing backoff delay to " + currentResendPause + ", sent " + this.packetCount);
+                    // System.out.println("[" + myId + "] Decrementing backoff delay to " +
+                    // currentResendPause + ", sent " + this.packetCount);
                 }
             }
         }
@@ -251,7 +273,7 @@ public class PerfectLink<T> {
             }
         }
 
-        @SuppressWarnings({"InfiniteLoopStatement", "unchecked", "rawtypes", "BusyWait"})
+        @SuppressWarnings({ "InfiniteLoopStatement", "unchecked", "rawtypes", "BusyWait" })
         private void senderRoutine() throws InterruptedException, IOException {
             try (DatagramSocket s = new DatagramSocket()) {
                 while (true) {
@@ -266,7 +288,8 @@ public class PerfectLink<T> {
                     } else {
                         buf = serializer.serialize((AckPacket) se.message);
                     }
-                    DatagramPacket p = new DatagramPacket(buf, buf.length, InetAddress.getByName(se.to.getIp()), se.to.getPort());
+                    DatagramPacket p = new DatagramPacket(buf, buf.length, InetAddress.getByName(se.to.getIp()),
+                            se.to.getPort());
 
                     try {
                         // send
@@ -317,11 +340,12 @@ public class PerfectLink<T> {
                         AckPacket ap = serializer.deserializeAckPacket(buff);
                         confirmed.add(ap.n);
 
-//                        System.out.println("Received ack for packet " + ap.n);
+                        // System.out.println("Received ack for packet " + ap.n);
                     } else {
                         DataPacket<T> dp = serializer.deserializeDataPacket(buff);
 
-//                        System.out.println("Received message " + dp.n + " containing " + dp.data + " from " + dp.from);
+                        // System.out.println("Received message " + dp.n + " containing " + dp.data + "
+                        // from " + dp.from);
 
                         sendAckForPacket(dp);
 
@@ -342,7 +366,7 @@ public class PerfectLink<T> {
             Sendable se = new Sendable(new AckPacket(dp.n, myId), dst);
             senderQueue.addFirst(se);
 
-//            System.out.println("sending ack to " + se.to.getId());
+            // System.out.println("sending ack to " + se.to.getId());
         }
     }
 }
