@@ -1,6 +1,7 @@
 package cs451.LatticeAgreement;
 
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.function.BiConsumer;
@@ -60,6 +61,35 @@ public class ConsensusTypes {
         }
     }
 
+    static class OutgoingNack<T> implements ConsensusPackage {
+        final int consensusNumber;
+        final int proposalNumber;
+        final T[] values;
+        final int numValues;
+
+        public OutgoingNack(int consensusNumber, int proposalNumber, T[] values, int numValues) {
+            this.consensusNumber = consensusNumber;
+            this.proposalNumber = proposalNumber;
+            this.values = values;
+            this.numValues = numValues;
+        }
+
+        @Override
+        public String toString() {
+            return "OutgoingNack{" +
+                    "consensusNumber=" + consensusNumber +
+                    ", proposalNumber=" + proposalNumber +
+                    // only print the first numValues values
+                    ", values=" + Arrays.copyOfRange(values, 0, numValues) +
+                    '}';
+        }
+
+        @Override
+        public int getConsensusNumber() {
+            return consensusNumber;
+        }
+    }
+
     static class Proposal<T> implements ConsensusPackage {
         final int consensusNumber;
         final int proposalNumber;
@@ -78,6 +108,35 @@ public class ConsensusTypes {
             this.consensusNumber = consensusNumber;
             this.proposalNumber = proposalNumber;
             this.values = values;
+        }
+
+        @Override
+        public int getConsensusNumber() {
+            return consensusNumber;
+        }
+    }
+
+    static class OutgoingProposal<T> implements ConsensusPackage {
+        final int consensusNumber;
+        final int proposalNumber;
+        final T[] values;
+        final int numValues;
+
+        public OutgoingProposal(int consensusNumber, int proposalNumber, T[] values, int numValues) {
+            this.consensusNumber = consensusNumber;
+            this.proposalNumber = proposalNumber;
+            this.values = values;
+            this.numValues = numValues;
+        }
+
+        @Override
+        public String toString() {
+            return "OutgoingProposal{" +
+                    "consensusNumber=" + consensusNumber +
+                    ", proposalNumber=" + proposalNumber +
+                    // only print the first numValues values
+                    ", values=" + Arrays.copyOfRange(values, 0, numValues) +
+                    '}';
         }
 
         @Override
@@ -115,10 +174,18 @@ public class ConsensusTypes {
             this.messageDeserializer = messageDeserializer;
         }
 
+        @SuppressWarnings("unused")
         private void serializeSet(Set<T> set, ByteBuffer buffer) {
             buffer.putInt(set.size());
             for (T value : set) {
                 messageSerializer.accept(value, buffer);
+            }
+        }
+
+        private void serializeSlice(T[] values, int numValues, ByteBuffer buffer) {
+            buffer.putInt(numValues);
+            for (int i = 0; i < numValues; i++) {
+                messageSerializer.accept(values[i], buffer);
             }
         }
 
@@ -143,11 +210,11 @@ public class ConsensusTypes {
             return new Ack(consensusNumber, proposalNumber);
         }
 
-        private void serializeNack(Nack<T> nack, ByteBuffer buffer) {
+        private void serializeNack(OutgoingNack<T> nack, ByteBuffer buffer) {
             buffer.put((byte) 1);
             buffer.putInt(nack.consensusNumber);
             buffer.putInt(nack.proposalNumber);
-            serializeSet(nack.values, buffer);
+            serializeSlice(nack.values, nack.numValues, buffer);
         }
 
         private Nack<T> deserializeNack(ByteBuffer buffer) {
@@ -157,6 +224,12 @@ public class ConsensusTypes {
             return new Nack<>(consensusNumber, proposalNumber, values);
         }
 
+        // private void serializeProposal(OutgoingProposal<T> proposal, ByteBuffer buffer) {
+        //     buffer.put((byte) 2);
+        //     buffer.putInt(proposal.consensusNumber);
+        //     buffer.putInt(proposal.proposalNumber);
+        //     serializeSlice(proposal.values, proposal.numValues, buffer);
+        // }
         private void serializeProposal(Proposal<T> proposal, ByteBuffer buffer) {
             buffer.put((byte) 2);
             buffer.putInt(proposal.consensusNumber);
@@ -185,8 +258,8 @@ public class ConsensusTypes {
         public void serialize(ConsensusPackage message, ByteBuffer buffer) {
             if (message instanceof Ack) {
                 serializeAck((Ack) message, buffer);
-            } else if (message instanceof Nack) {
-                serializeNack((Nack) message, buffer);
+            } else if (message instanceof OutgoingNack) {
+                serializeNack((OutgoingNack) message, buffer);
             } else if (message instanceof Proposal) {
                 serializeProposal((Proposal) message, buffer);
             } else if (message instanceof Decided) {

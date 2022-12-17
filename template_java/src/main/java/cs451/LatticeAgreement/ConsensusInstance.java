@@ -18,13 +18,20 @@ class ConsensusInstance<T> {
     Set<T> proposedValue;
     Set<T> lastBroadcastedProposal;
     Set<T> acceptedValue;
+
+    private final T[] acceptedValueArr;
+    private int acceptedValueLength = 0;
+
     private int decidedCount = 0;
     private int[] latestProposalNumber;
 
+    @SuppressWarnings("unchecked")
     public ConsensusInstance(int consensusNumber, ConsensusManager<T> manager) {
         this.consensusNumber = consensusNumber;
         proposedValue = new HashSet<>();
         acceptedValue = new HashSet<>();
+
+        this.acceptedValueArr = (T[]) new Object[manager.ds];
 
         // latest proposal number for each host
         latestProposalNumber = new int[manager.hosts.size()];
@@ -97,10 +104,8 @@ class ConsensusInstance<T> {
             Ack ack = new Ack(consensusNumber, proposal.proposalNumber);
             m.perfectLink.send(ack, m.hosts.get(senderId - 1));
         } else {
-            acceptedValue.addAll(proposal.values);
-            Set<T> toSend = new HashSet<>(acceptedValue);
-            toSend.removeAll(proposal.values);
-            Nack<T> nack = new Nack<>(consensusNumber, proposal.proposalNumber, toSend);
+            addAllToAccepted(proposal.values);
+            OutgoingNack<T> nack = new OutgoingNack<>(consensusNumber, proposal.proposalNumber, acceptedValueArr, acceptedValueLength);
             m.perfectLink.send(nack, m.hosts.get(senderId - 1));
         }
     }
@@ -155,14 +160,15 @@ class ConsensusInstance<T> {
         Set<T> copyOfProposal = Set.copyOf(proposal);
         lastBroadcastedProposal = copyOfProposal;
         Proposal<T> proposalPackage = new Proposal<>(consensusNumber, activeProposalNumber, copyOfProposal);
+        // OutgoingProposal<T> proposalPackage = new OutgoingProposal<>(consensusNumber, activeProposalNumber, acceptedValueArr, acceptedValueLength)
+
+        addAllToAccepted(proposal);
 
         // if acceptedValue is a subset of proposal, count as ack otherwise count as
         // nack and add difference to proposedValue
         if (proposal.containsAll(acceptedValue)) {
-            acceptedValue.addAll(proposal);
             ackCount++;
         } else {
-            acceptedValue.addAll(proposal);
             nackCount++;
             proposedValue.addAll(acceptedValue);
         }
@@ -170,6 +176,16 @@ class ConsensusInstance<T> {
         for (Host host : m.hosts) {
             if (host.getId() != m.myId) {
                 m.perfectLink.send(proposalPackage, host);
+            }
+        }
+    }
+
+    private void addAllToAccepted(Set<T> values) {
+        for (T value : values) {
+            if (!acceptedValue.contains(value)) {
+                acceptedValue.add(value);
+                acceptedValueArr[acceptedValueLength] = value;
+                acceptedValueLength++;
             }
         }
     }
