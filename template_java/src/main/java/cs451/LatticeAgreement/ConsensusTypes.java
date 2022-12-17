@@ -174,7 +174,6 @@ public class ConsensusTypes {
             this.messageDeserializer = messageDeserializer;
         }
 
-        @SuppressWarnings("unused")
         private void serializeSet(Set<T> set, ByteBuffer buffer) {
             buffer.putInt(set.size());
             for (T value : set) {

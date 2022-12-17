@@ -45,6 +45,8 @@ class ConsensusInstance<T> {
             active = true;
             activeProposalNumber++;
 
+            proposedValue.addAll(acceptedValue);
+
             broadcastProposal(proposedValue);
         }
     }
@@ -160,7 +162,7 @@ class ConsensusInstance<T> {
         Set<T> copyOfProposal = Set.copyOf(proposal);
         lastBroadcastedProposal = copyOfProposal;
         Proposal<T> proposalPackage = new Proposal<>(consensusNumber, activeProposalNumber, copyOfProposal);
-        // OutgoingProposal<T> proposalPackage = new OutgoingProposal<>(consensusNumber, activeProposalNumber, acceptedValueArr, acceptedValueLength)
+        // OutgoingProposal<T> proposalPackage = new OutgoingProposal<>(consensusNumber, activeProposalNumber, acceptedValueArr, acceptedValueLength);
 
         addAllToAccepted(proposal);
 
