@@ -17,7 +17,6 @@ import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.function.Predicate;
 
 public class PerfectLink<T> {
     private static final int SENDER_COUNT = 1;
@@ -331,7 +330,7 @@ public class PerfectLink<T> {
 
                 System.out.println("Listening on port " + port);
 
-                byte[] buff = new byte[4096];
+                byte[] buff = new byte[65536];
                 while (true) {
                     DatagramPacket p = new DatagramPacket(buff, buff.length);
                     s.receive(p);

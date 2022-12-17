@@ -23,8 +23,9 @@ public class ConsensusManager<T> {
     final int myId;
     final List<Host> hosts;
     final Consumer<Set<T>> decide;
+    final int vs;
+    final int ds;
 
-    private int handlingNow = 0;
     private final Lock handlingNowLock = new ReentrantLock();
     private final Condition canHandleMore = handlingNowLock.newCondition();
 
@@ -47,7 +48,10 @@ public class ConsensusManager<T> {
                 serializer::deserialize,
                 messageSize * ds + Integer.BYTES * 3 + 1);
         this.myId = myId;
-        this.MAX_HANDLING = Math.max(1, 10000 / (int)(Math.pow(hosts.size(), 2)));
+        this.MAX_HANDLING = Math.min(100, Math.max(1, 10000 / (int)(Math.pow(hosts.size(), 2))));
+        this.vs = vs;
+        this.ds = ds;
+        System.out.println("MAX HANDLING: " + MAX_HANDLING);
     }
 
     public void startThreads() {
@@ -62,14 +66,13 @@ public class ConsensusManager<T> {
         handlingNowLock.lock();
 
         try {
-            while (handlingNow >= MAX_HANDLING) {
+            while (consensusNumber - lastDecided >= MAX_HANDLING) {
                 try {
                     canHandleMore.await();
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
             }
-            handlingNow++;
         } finally {
             handlingNowLock.unlock();
         }
@@ -85,18 +88,21 @@ public class ConsensusManager<T> {
 
     void onDecide(Set<T> ts, int consensusN) {
         decisions.add(new Decision<>(consensusN, ts));
+        boolean printedAnything = false;
         while (!decisions.isEmpty() && decisions.peek().consensusNumber == lastDecided + 1) {
+            printedAnything = true;
             var decision = decisions.poll();
             decide.accept(decision.value);
             lastDecided++;
         }
 
-        handlingNowLock.lock();
-        try {
-            handlingNow--;
-            canHandleMore.signal();
-        } finally {
-            handlingNowLock.unlock();
+        if (printedAnything) {
+            handlingNowLock.lock();
+            try {
+                canHandleMore.signal();
+            } finally {
+                handlingNowLock.unlock();
+            }
         }
     }
 

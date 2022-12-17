@@ -8,20 +8,22 @@ import java.util.function.BiConsumer;
 import java.util.function.Function;
 
 public class MSerializer<T> {
+    static final int BUFFER_SIZE = 65536;
     private final BiConsumer<T, ByteBuffer> messageSerializer;
     private final Function<ByteBuffer, T> messageDeserializer;
     @SuppressWarnings("FieldCanBeLocal")
     private final int messageSize; // Upper bound on size of single message
+    private final byte[] buffer;
 
     public MSerializer(BiConsumer<T, ByteBuffer> messageSerializer, Function<ByteBuffer, T> messageDeserializer, int messageSize) {
         this.messageSerializer = messageSerializer;
         this.messageDeserializer = messageDeserializer;
         this.messageSize = messageSize;
+        this.buffer = new byte[BUFFER_SIZE];
     }
 
     public byte[] serialize(NetworkTypes.DataPacket<T> dp) {
-        int size = 4000;
-        ByteBuffer bb = ByteBuffer.allocate(size);
+        ByteBuffer bb = ByteBuffer.wrap(buffer);
         bb.put((byte) (1));
         bb.putInt(dp.n);
         bb.put((byte) (dp.from - 1));
@@ -29,7 +31,6 @@ public class MSerializer<T> {
         for (T message : dp.data) {
             messageSerializer.accept(message, bb);
         }
-//        return bb.array();
         return Arrays.copyOfRange(bb.array(), 0, bb.position());
     }
 

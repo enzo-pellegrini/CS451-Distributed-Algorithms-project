@@ -1,4 +1,5 @@
 #!/usr/local/bin/node
+const { assert } = require("console");
 const fs = require("fs");
 const { exit } = require("process");
 
@@ -9,6 +10,8 @@ const [decidedFns, proposedFns] = [
   fileNames.slice(0, fileNames.length / 2),
   fileNames.slice(fileNames.length / 2),
 ];
+
+assert(decidedFns.length === proposedFns.length);
 
 const decided = decidedFns
   .map((fileName) => fs.readFileSync(fileName).toString())
@@ -28,12 +31,13 @@ console.log(
   `There were ${nConsensus} consensus across ${decided.length} files`
 );
 
-console.log("Checking Consistency")
+console.log("Checking Consistency");
 
+let consistencyFailed = false;
 const isSubset = (a, b) => {
   for (const e of a) {
     if (!b.has(e)) {
-      console.log(`Not a subset: ${e} not in`, b)
+      console.log("Item not in set: ", e);
       return false;
     }
   }
@@ -53,12 +57,15 @@ for (let i = 0; i < nConsensus; i++) {
       console.log(`Not a subset: for consensus ${i}`);
       console.log("First: ", interested[j]);
       console.log("Second: ", interested[j + 1]);
-      exit(1);
+      consistencyFailed = true;
     }
   }
 }
+if (consistencyFailed) {
+  exit(1);
+}
 
-console.log("Checking Correctness")
+console.log("Checking Correctness");
 
 const proposed = proposedFns
   .map((fileName) => fs.readFileSync(fileName).toString())
@@ -74,9 +81,14 @@ const proposed = proposedFns
 // check that for each file, the proposed is a subset of the decided for each consensus
 for (let i = 0; i < nConsensus; i++) {
   for (let j = 0; j < decided.length; j++) {
-    if (decided[j][i] !== undefined && !isSubset(proposed[j][i], decided[j][i])) {
+    if (
+      decided[j][i] !== undefined &&
+      !isSubset(proposed[j][i], decided[j][i])
+    ) {
       console.error(
-        `Proposed values not contained in the decided: consensus ${i} host ${j+1}`
+        `Proposed values not contained in the decided: consensus ${i} host ${
+          j + 1
+        }`
       );
       console.log("Proposed: ", proposed[j][i]);
       console.log("Decided: ", decided[j][i]);
@@ -86,19 +98,22 @@ for (let i = 0; i < nConsensus; i++) {
 }
 
 // set of all proposed values across all files for each consensus
-const allProposed = []
+const allProposed = [];
 for (let i = 0; i < nConsensus; i++) {
-  const all = new Set()
+  const all = new Set();
   for (let j = 0; j < proposed.length; j++) {
-    proposed[j][i].forEach(v => all.add(v))
+    proposed[j][i].forEach((v) => all.add(v));
   }
-  allProposed.push(all)
+  allProposed.push(all);
 }
 
 // check that all decided values are in allProposed
 for (let i = 0; i < nConsensus; i++) {
   for (let j = 0; j < decided.length; j++) {
-    if (decided[j][i] !== undefined && !isSubset(decided[j][i], allProposed[i])) {
+    if (
+      decided[j][i] !== undefined &&
+      !isSubset(decided[j][i], allProposed[i])
+    ) {
       console.log(
         `Decided values not contained in the proposed: consensus ${j} host ${i}`
       );

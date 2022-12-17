@@ -92,9 +92,9 @@ class ConsensusInstance<T> {
             m.perfectLink.send(ack, m.hosts.get(senderId - 1));
         } else {
             acceptedValue.addAll(proposal.values);
-            Set<T> difference = new HashSet<>(acceptedValue);
-            difference.removeAll(proposal.values);
-            Nack<T> nack = new Nack<>(consensusNumber, proposal.proposalNumber, difference);
+            Set<T> toSend = new HashSet<>(acceptedValue);
+            toSend.removeAll(proposal.values);
+            Nack<T> nack = new Nack<>(consensusNumber, proposal.proposalNumber, toSend);
             m.perfectLink.send(nack, m.hosts.get(senderId - 1));
         }
     }
