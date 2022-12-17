@@ -93,7 +93,6 @@ public class DirectedSender<T> {
     }
 
     private boolean sendPackage(DatagramSocket sock, int n, List<T> messages) {
-        // TODO: reuse the same datagram packet for all messages
         DataPacket<T> p = new DataPacket<>(n, parent.myId, messages);
         byte[] buf = parent.serializer.serialize(p);
         Host dst = parent.hosts.get(dstId - 1);
