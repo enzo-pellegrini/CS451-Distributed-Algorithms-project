@@ -98,7 +98,12 @@ public class PerfectLink<T> {
         for (DirectedSender<T> ds : directedSenders) {
             if (ds.dstId == myId)
                 continue;
-            executor.submit(() -> sendRoutine(ds.dstId));
+
+            try {
+                executor.submit(() -> sendRoutine(ds.dstId));
+            } catch (RejectedExecutionException e) {
+                // Means that the executor was stopped
+            }
         }
     }
 
@@ -119,8 +124,12 @@ public class PerfectLink<T> {
 
         // System.out.println("Resend pause for " + dstId + " is " + ds.resendPause);
 
-        // schedule next run in resendPause milliseconds
-        executor.schedule(() -> sendRoutine(dstId), ds.resendPause, TimeUnit.MILLISECONDS);
+        try {
+            // schedule next run in resendPause milliseconds
+            executor.schedule(() -> sendRoutine(dstId), ds.resendPause, TimeUnit.MILLISECONDS);
+        } catch (RejectedExecutionException e) {
+            // Means that the executor was stopped
+        }
     }
 
     /**
@@ -175,7 +184,8 @@ public class PerfectLink<T> {
 
                         directedSenders.get(ap.receiver_id - 1).handleAck(ap);
 
-                        // System.out.println("Received ack for packet " + ap.n + " from " + ap.receiver_id);
+                        // System.out.println("Received ack for packet " + ap.n + " from " +
+                        // ap.receiver_id);
                     } else {
                         DataPacket<T> dp = serializer.deserializeDataPacket(buff);
 
@@ -200,16 +210,20 @@ public class PerfectLink<T> {
 
             final AckPacket ap = new AckPacket(dp.n, myId);
             // submit sending of ack to executor
-            executor.submit(() -> {
-                try {
-                    byte[] buff = serializer.serialize(ap);
-                    DatagramPacket p = new DatagramPacket(buff, buff.length, InetAddress.getByName(dst.getIp()),
-                            dst.getPort());
-                    sendingSocket.send(p);
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            });
+            try {
+                executor.submit(() -> {
+                    try {
+                        byte[] buff = serializer.serialize(ap);
+                        DatagramPacket p = new DatagramPacket(buff, buff.length, InetAddress.getByName(dst.getIp()),
+                                dst.getPort());
+                        sendingSocket.send(p);
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                });
+            } catch (RejectedExecutionException e) {
+                // Means that the executor was stopped
+            }
 
             // System.out.println("sending ack to " + dp.from + " for packet " + dp.n);
         }
