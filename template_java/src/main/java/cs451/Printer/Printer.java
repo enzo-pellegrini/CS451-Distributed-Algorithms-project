@@ -12,7 +12,6 @@ public abstract class Printer {
 
     protected void print(String text) throws IOException {
         writer.write(text);
-        writer.flush();
     }
 
     protected void println(String text) throws IOException {
