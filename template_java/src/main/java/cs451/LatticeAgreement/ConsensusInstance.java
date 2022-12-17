@@ -77,7 +77,7 @@ class ConsensusInstance<T> {
     public boolean canDie() {
         synchronized (this) {
             if (!active && decidedCount >= m.hosts.size()) {
-                System.out.println("gc consensus " + consensusNumber);
+                // System.out.println("gc consensus " + consensusNumber);
                 return true;
             }
             return false;
