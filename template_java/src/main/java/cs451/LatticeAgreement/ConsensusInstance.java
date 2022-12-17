@@ -57,6 +57,7 @@ class ConsensusInstance<T> {
         }
     }
 
+    @SuppressWarnings("unchecked")
     public boolean canCancelMessage(ConsensusPackage message, int toId) {
         synchronized (this) {
             if (message instanceof Proposal) {

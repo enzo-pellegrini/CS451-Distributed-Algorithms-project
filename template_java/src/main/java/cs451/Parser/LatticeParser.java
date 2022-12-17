@@ -1,6 +1,5 @@
 package cs451.Parser;
 
-import java.io.IOException;
 import java.util.List;
 
 public class LatticeParser extends Parser {

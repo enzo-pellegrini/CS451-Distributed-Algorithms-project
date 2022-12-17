@@ -1,7 +1,5 @@
 package cs451.PerfectLinks;
 
-import cs451.Parser.Host;
-
 import java.util.List;
 
 /**

@@ -14,6 +14,7 @@ public class HostsParser {
     private static final String HOSTS_KEY = "--hosts";
     private static final String SPACES_REGEX = "\\s+";
 
+    @SuppressWarnings("unused")
     private String filename;
     private List<Host> hosts = new ArrayList<>();
 

@@ -14,7 +14,7 @@ public class MSerializer<T> {
     static final int BUFFER_SIZE = 65536;
     private final BiConsumer<T, ByteBuffer> messageSerializer;
     private final Function<ByteBuffer, T> messageDeserializer;
-    @SuppressWarnings("FieldCanBeLocal")
+    @SuppressWarnings("unused")
     private final int messageSize; // Upper bound on size of single message
     private final byte[] buffer;
 

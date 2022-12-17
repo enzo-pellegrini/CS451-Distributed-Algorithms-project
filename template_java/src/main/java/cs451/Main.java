@@ -3,7 +3,6 @@ package cs451;
 import cs451.LatticeAgreement.ConsensusManager;
 import cs451.Parser.Host;
 import cs451.Parser.LatticeParser;
-import cs451.PerfectLinks.PerfectLink;
 import cs451.Printer.LatticeOutputWriter;
 
 import java.io.IOException;
