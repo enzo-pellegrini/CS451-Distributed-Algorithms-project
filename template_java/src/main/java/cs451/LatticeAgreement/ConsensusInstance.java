@@ -16,6 +16,7 @@ class ConsensusInstance<T> {
     private int nackCount = 0;
     int activeProposalNumber = 0;
     Set<T> proposedValue;
+    Set<T> lastBroadcastedProposal;
     Set<T> acceptedValue;
     private int decidedCount = 0;
     private int[] latestProposalNumber;
@@ -75,7 +76,11 @@ class ConsensusInstance<T> {
 
     public boolean canDie() {
         synchronized (this) {
-            return !active && decidedCount >= m.hosts.size();
+            if (!active && decidedCount >= m.hosts.size()) {
+                // System.out.println("gc consensus " + consensusNumber);
+                return true;
+            }
+            return false;
         }
     }
 
@@ -124,7 +129,7 @@ class ConsensusInstance<T> {
         if (active) {
             if (isAck && ackCount > m.hosts.size() / 2) {
                 // decide.accept(proposedValue);
-                m.onDecide(proposedValue, consensusNumber);
+                m.onDecide(lastBroadcastedProposal, consensusNumber);
                 active = false;
                 // broadcast decided
                 Decided decided = new Decided(consensusNumber);
@@ -146,14 +151,17 @@ class ConsensusInstance<T> {
     }
 
     private void broadcastProposal(Set<T> proposal) {
-        Set<T> copyOfProposal = new HashSet<>(proposal);
+        Set<T> copyOfProposal = Set.copyOf(proposal);
+        lastBroadcastedProposal = copyOfProposal;
         Proposal<T> proposalPackage = new Proposal<>(consensusNumber, activeProposalNumber, copyOfProposal);
 
         // if acceptedValue is a subset of proposal, count as ack otherwise count as
         // nack and add difference to proposedValue
-        if (acceptedValue.containsAll(proposal)) {
+        if (proposal.containsAll(acceptedValue)) {
+            acceptedValue.addAll(proposal);
             ackCount++;
         } else {
+            acceptedValue.addAll(proposal);
             nackCount++;
             proposedValue.addAll(acceptedValue);
         }

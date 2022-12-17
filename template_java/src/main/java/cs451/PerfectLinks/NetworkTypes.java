@@ -8,75 +8,51 @@ import java.util.List;
  * Types that get sent through UDP (serializable)
  */
 public class NetworkTypes {
-    static abstract class NetworkPacket {
-        public abstract int getN();
-    }
-    static class DataPacket<T> extends NetworkPacket {
-        public final int n;
-        public final int from;
-        public final List<T> data;
+    interface NetworkPacket {}
 
-        @Override
-        public int getN() {
-            return n;
-        }
+    static class DataPacket<T> implements NetworkPacket {
+        public int n;
+        public int from;
+        public List<T> data;
 
-        public DataPacket(int n, int from, List<T> data) {
+        public void assignFields(int n, int from, List<T> data) {
             this.n = n;
             this.from = from;
             this.data = data;
         }
 
         @Override
-        public int hashCode() {
-            final int prime = 31;
-            int result = 1;
-            result = prime * result + n;
-            result = prime * result + from;
-            return result;
+        public String toString() {
+            return "DataPacket [n=" + n + ", from=" + from + ", data=" + data + "]";
+        }
+    }
+
+    static class AckPacket implements NetworkPacket {
+        public int n;
+        public int receiver_id;
+
+        public AckPacket(int receiverId) {
+            this.receiver_id = receiverId;
         }
 
-        @SuppressWarnings("ALL")
-        @Override
-        public boolean equals(Object obj) {
-            if (this == obj)
-                return true;
-            if (obj == null)
-                return false;
-            if (getClass() != obj.getClass())
-                return false;
-            DataPacket other = (DataPacket<T>) obj;
-            if (n != other.n)
-                return false;
-            if (from != other.from)
-                return false;
-            return true;
+        public AckPacket() {}
+
+        public void assignSeqN(int n) {
+            this.n = n;
+        }
+        
+        public void assignFields(int n, int receiverId) {
+            this.n = n;
+            this.receiver_id = receiverId;
         }
 
         @Override
         public String toString() {
-            return "DataPacket{" +
-                    "n=" + n +
-                    ", from=" + from +
-                    ", data=" + data +
-                    '}';
+            return "AckPacket [n=" + n + ", receiver_id=" + receiver_id + "]";
         }
     }
 
-    static class AckPacket extends NetworkPacket {
-        public final int n;
-        public final int receiver_id;
-
-        @Override
-        public int getN() {
-            return n;
-        }
-        public AckPacket(int n, int receiver_id) {
-            this.n = n;
-            this.receiver_id = receiver_id;
-        }
-    }
-
+    // Entry in set to guarantee non-duplication
     static class ReceivedPacket {
         public final int n;
         public final int sender;
@@ -117,20 +93,8 @@ public class NetworkTypes {
         }
     }
 
-    static class Sendable {
-        public final int n;
-        public final Host to;
-        public int tryCount = 0;
-        public NetworkPacket message;
-
-        public Sendable(NetworkPacket message, Host to) {
-            this.n = message.getN();
-            this.message = message;
-            this.to = to;
-        }
-    }
-
-    public static class ReceivedMessage<T> { // TODO: do messages have to be numbered (per project specification)?
+    // Tuple for delivery to upper layers
+    public static class ReceivedMessage<T> {
         public final T data;
         public final int from;
 

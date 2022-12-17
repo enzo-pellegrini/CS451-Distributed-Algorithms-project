@@ -3,6 +3,7 @@ package cs451;
 import cs451.LatticeAgreement.ConsensusManager;
 import cs451.Parser.Host;
 import cs451.Parser.LatticeParser;
+import cs451.PerfectLinks.PerfectLink;
 import cs451.Printer.LatticeOutputWriter;
 
 import java.io.IOException;
@@ -81,6 +82,19 @@ public class Main {
         while ((proposal = parser.getNextProposal()) != null) {
             consensusManager.propose(proposal);
         }
+
+
+        // PerfectLink<Integer> pl = new PerfectLink<>(parser.myId(), parser.hosts().get(parser.myId() - 1).getPort(), parser.hosts(),
+        //         m -> System.out.println("\t\t" + m.data), (m, dstId) -> false, (m, bb) -> bb.putInt(m), ByteBuffer::getInt, Integer.BYTES);
+        // pl.startThreads();
+        // for (int i=0; i<10000; i++) {
+        //     for (Host host : parser.hosts()) {
+        //         if (host.getId() != parser.myId()) {
+        //             pl.send(i, host);
+        //         }
+        //     }
+        // }
+        
 
         // After a process finishes broadcasting,
         // it waits forever for the delivery of messages.
