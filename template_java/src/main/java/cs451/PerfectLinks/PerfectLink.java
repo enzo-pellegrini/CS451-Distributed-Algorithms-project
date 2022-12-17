@@ -51,9 +51,9 @@ public class PerfectLink<T> {
     private static final int MAX_SEND_AT_ONCE = 200;
     private static final int HISTORY_SIZE = 20;
 
-    private final int myId;
+    final int myId;
     private final int port;
-    private final List<Host> hosts;
+    final List<Host> hosts;
 
     private final Lock sendBufferLock = new ReentrantLock();
     private final List<List<T>> sendBuffers;
@@ -71,7 +71,7 @@ public class PerfectLink<T> {
     private final Set<ReceivedPacket> deliveredSet = Collections.synchronizedSet(new HashSet<>());
     private final Consumer<ReceivedMessage<T>> deliver;
     private final BiFunction<T, Integer, Boolean> isCanceled;
-    private final MSerializer<T> serializer;
+    final MSerializer<T> serializer;
 
     private final Thread[] senderThreads = new Thread[SENDER_COUNT];
     private final Thread receiverThread;
