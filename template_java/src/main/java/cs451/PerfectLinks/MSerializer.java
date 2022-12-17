@@ -7,9 +7,6 @@ import java.util.List;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 
-import cs451.PerfectLinks.NetworkTypes.AckPacket;
-import cs451.PerfectLinks.NetworkTypes.DataPacket;
-
 public class MSerializer<T> {
     static final int BUFFER_SIZE = 65536;
     private final BiConsumer<T, ByteBuffer> messageSerializer;
@@ -17,9 +14,6 @@ public class MSerializer<T> {
     @SuppressWarnings("unused")
     private final int messageSize; // Upper bound on size of single message
     private final byte[] buffer;
-
-    DataPacket<T> dataPacket = new DataPacket<>();
-    AckPacket ackPacket = new AckPacket();
 
     public MSerializer(BiConsumer<T, ByteBuffer> messageSerializer, Function<ByteBuffer, T> messageDeserializer, int messageSize) {
         this.messageSerializer = messageSerializer;
@@ -68,8 +62,7 @@ public class MSerializer<T> {
             messages.add(messageDeserializer.apply(bb));
         }
 
-        dataPacket.assignFields(n, from, messages);
-        return dataPacket;
+        return new NetworkTypes.DataPacket<>(n, from, messages);
     }
 
     public NetworkTypes.AckPacket deserializeAckPacket(byte[] data) {
@@ -80,7 +73,6 @@ public class MSerializer<T> {
         int n = bb.getInt();
         int receiver_id = (bb.get() & 0xFF) + 1;
 
-        ackPacket.assignFields(n, receiver_id);
-        return ackPacket;
+        return new NetworkTypes.AckPacket(n, receiver_id);
     }
 }
