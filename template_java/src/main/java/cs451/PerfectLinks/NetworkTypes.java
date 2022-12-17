@@ -34,7 +34,7 @@ public class NetworkTypes {
             return result;
         }
 
-        @SuppressWarnings("ALL")
+        @SuppressWarnings("rawtypes")
         @Override
         public boolean equals(Object obj) {
             if (this == obj)
@@ -43,7 +43,7 @@ public class NetworkTypes {
                 return false;
             if (getClass() != obj.getClass())
                 return false;
-            DataPacket other = (DataPacket<T>) obj;
+            DataPacket other = (DataPacket) obj;
             if (n != other.n)
                 return false;
             if (from != other.from)
@@ -115,20 +115,7 @@ public class NetworkTypes {
         }
     }
 
-    static class Sendable {
-        public final int n;
-        public final Host to;
-        public int tryCount = 0;
-        public NetworkPacket message;
-
-        public Sendable(NetworkPacket message, Host to) {
-            this.n = message.getN();
-            this.message = message;
-            this.to = to;
-        }
-    }
-
-    public static class ReceivedMessage<T> { // TODO: do messages have to be numbered (per project specification)?
+    public static class ReceivedMessage<T> {
         public final T data;
         public final int from;
 
