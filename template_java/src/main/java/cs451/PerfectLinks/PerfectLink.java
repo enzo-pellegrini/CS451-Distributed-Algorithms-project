@@ -146,6 +146,9 @@ public class PerfectLink<T> {
     }
 
     class Receiver extends Thread {
+        // Object cached for performance
+        private final AckPacket ackPacket = new AckPacket(myId);
+
         public Receiver() {
             super("Receiver");
         }
@@ -198,11 +201,11 @@ public class PerfectLink<T> {
         private void sendAckForPacket(DataPacket<T> dp) {
             final Host dst = hosts.get(dp.from - 1);
 
-            final AckPacket ap = new AckPacket(dp.n, myId);
+            ackPacket.assignSeqN(dp.n);
             // submit sending of ack to executor
             executor.submit(() -> {
                 try {
-                    byte[] buff = serializer.serialize(ap);
+                    byte[] buff = serializer.serialize(ackPacket);
                     DatagramPacket p = new DatagramPacket(buff, buff.length, InetAddress.getByName(dst.getIp()),
                             dst.getPort());
                     sendingSocket.send(p);

@@ -19,6 +19,9 @@ import cs451.PerfectLinks.NetworkTypes.DataPacket;
 public class DirectedSender<T> {
     static private final int MAX_IN_FLIGHT = 10;
 
+    // Objects cached for performance
+    private final DataPacket<T> dataPacket = new DataPacket<>();
+
     private final PerfectLink<T> parent;
     final int dstId;
     private final Queue<T> queue = new LinkedList<>();
@@ -93,9 +96,8 @@ public class DirectedSender<T> {
     }
 
     private boolean sendPackage(DatagramSocket sock, int n, List<T> messages) {
-        // TODO: reuse the same datagram packet for all messages
-        DataPacket<T> p = new DataPacket<>(n, parent.myId, messages);
-        byte[] buf = parent.serializer.serialize(p);
+        dataPacket.assignFields(n, parent.myId, messages);
+        byte[] buf = parent.serializer.serialize(dataPacket);
         Host dst = parent.hosts.get(dstId - 1);
         try {
             DatagramPacket dp = new DatagramPacket(buf, buf.length, InetAddress.getByName(dst.getIp()), dst.getPort());
