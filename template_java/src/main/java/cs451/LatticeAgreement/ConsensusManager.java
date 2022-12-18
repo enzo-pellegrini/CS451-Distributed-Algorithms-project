@@ -46,10 +46,11 @@ public class ConsensusManager<T> {
                 serializer::deserialize,
                 messageSize * ds + Integer.BYTES * 3 + 1);
         this.myId = myId;
-        this.MAX_HANDLING = Math.min(100, Math.max(8, 10000 / (int) (Math.pow(hosts.size(), 2))));
+        // this.MAX_HANDLING = Math.min(100, Math.max(8, 10000 / (int) (Math.pow(hosts.size(), 2))));
+        this.MAX_HANDLING = 8;
         this.vs = vs;
         this.ds = ds;
-        // System.out.println("MAX HANDLING: " + MAX_HANDLING);
+        System.out.println("MAX HANDLING: " + MAX_HANDLING);
     }
 
     public void startThreads() {

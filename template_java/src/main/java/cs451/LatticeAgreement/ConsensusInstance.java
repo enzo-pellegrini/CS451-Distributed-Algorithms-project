@@ -103,25 +103,26 @@ class ConsensusInstance<T> {
             m.perfectLink.send(ack, m.hosts.get(senderId - 1));
         } else {
             addAllToAccepted(proposal.values);
-            OutgoingNack<T> nack = new OutgoingNack<>(consensusNumber, proposal.proposalNumber, acceptedValueArr, acceptedValueLength);
+            OutgoingNack<T> nack = new OutgoingNack<>(consensusNumber, proposal.proposalNumber, acceptedValueArr,
+                    acceptedValueLength);
             m.perfectLink.send(nack, m.hosts.get(senderId - 1));
         }
     }
 
     private void handleAck(Ack ack) {
-        if (ack.proposalNumber == activeProposalNumber) {
+        if (active && ack.proposalNumber == activeProposalNumber) {
             ackCount++;
 
-            ackLogic(true);
+            ackLogic();
         }
     }
 
     private void handleNack(Nack<T> nack) {
-        if (nack.proposalNumber == activeProposalNumber) {
+        if (active && nack.proposalNumber == activeProposalNumber) {
             nackCount++;
             proposedValue.addAll(nack.values);
 
-            ackLogic(false);
+            ackLogic();
         }
     }
 
@@ -129,28 +130,26 @@ class ConsensusInstance<T> {
         decidedCount++;
     }
 
-    private void ackLogic(boolean isAck) {
-        if (active) {
-            if (isAck && ackCount > m.hosts.size() / 2) {
-                // decide.accept(proposedValue);
-                m.onDecide(lastBroadcastedProposal, consensusNumber);
-                active = false;
-                // broadcast decided
-                Decided decided = new Decided(consensusNumber);
-                for (Host host : m.hosts) {
-                    if (host.getId() != m.myId) {
-                        m.perfectLink.send(decided, host);
-                    }
+    private void ackLogic() {
+        if (nackCount > 0 && ackCount + nackCount > m.hosts.size() / 2) {
+            activeProposalNumber++;
+
+            ackCount = 0;
+            nackCount = 0;
+
+            broadcastProposal(proposedValue);
+        } else if (ackCount > m.hosts.size() / 2) {
+            // decide.accept(proposedValue);
+            m.onDecide(lastBroadcastedProposal, consensusNumber);
+            active = false;
+            // broadcast decided
+            Decided decided = new Decided(consensusNumber);
+            for (Host host : m.hosts) {
+                if (host.getId() != m.myId) {
+                    m.perfectLink.send(decided, host);
                 }
-                decidedCount++;
-            } else if (ackCount + nackCount > m.hosts.size() / 2) {
-                activeProposalNumber++;
-
-                ackCount = 0;
-                nackCount = 0;
-
-                broadcastProposal(proposedValue);
             }
+            decidedCount++;
         }
     }
 
@@ -158,7 +157,8 @@ class ConsensusInstance<T> {
         Set<T> copyOfProposal = Set.copyOf(proposal);
         lastBroadcastedProposal = copyOfProposal;
         Proposal<T> proposalPackage = new Proposal<>(consensusNumber, activeProposalNumber, copyOfProposal);
-        // OutgoingProposal<T> proposalPackage = new OutgoingProposal<>(consensusNumber, activeProposalNumber, acceptedValueArr, acceptedValueLength);
+        // OutgoingProposal<T> proposalPackage = new OutgoingProposal<>(consensusNumber,
+        // activeProposalNumber, acceptedValueArr, acceptedValueLength);
 
         addAllToAccepted(proposal);
 
