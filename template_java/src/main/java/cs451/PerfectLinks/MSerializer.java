@@ -1,11 +1,10 @@
 package cs451.PerfectLinks;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.function.BiConsumer;
-import java.util.function.Function;
+import java.util.*;
+import java.util.function.*;
+
+import cs451.PerfectLinks.NetworkTypes.*;
 
 public class MSerializer<T> {
     static final int BUFFER_SIZE = 65536;
@@ -14,6 +13,9 @@ public class MSerializer<T> {
     @SuppressWarnings("unused")
     private final int messageSize; // Upper bound on size of single message
     private final byte[] buffer;
+
+    private DataPacket<T> dataPacket = new DataPacket<>();
+    private AckPacket ackPacket = new AckPacket();
 
     public MSerializer(BiConsumer<T, ByteBuffer> messageSerializer, Function<ByteBuffer, T> messageDeserializer, int messageSize) {
         this.messageSerializer = messageSerializer;
@@ -62,7 +64,10 @@ public class MSerializer<T> {
             messages.add(messageDeserializer.apply(bb));
         }
 
-        return new NetworkTypes.DataPacket<>(n, from, messages);
+        dataPacket.n = n;
+        dataPacket.from = from;
+        dataPacket.data = messages;
+        return dataPacket;
     }
 
     public NetworkTypes.AckPacket deserializeAckPacket(byte[] data) {
@@ -73,6 +78,8 @@ public class MSerializer<T> {
         int n = bb.getInt();
         int receiver_id = (bb.get() & 0xFF) + 1;
 
-        return new NetworkTypes.AckPacket(n, receiver_id);
+        ackPacket.n = n;
+        ackPacket.receiver_id = receiver_id;
+        return ackPacket;
     }
 }

@@ -26,6 +26,9 @@ public class DirectedSender<T> {
     private int seqNum = 0;
     private Map<Integer, List<T>> inFlight = new HashMap<>();
 
+    // cache the packet to avoid creating a new one every time
+    private DataPacket<T> dataPacket = new DataPacket<>();
+
     int resendPause = 200;
 
     public DirectedSender(PerfectLink<T> parent, int dstId) {
@@ -93,8 +96,11 @@ public class DirectedSender<T> {
     }
 
     private boolean sendPackage(DatagramSocket sock, int n, List<T> messages) {
-        DataPacket<T> p = new DataPacket<>(n, parent.myId, messages);
-        byte[] buf = parent.serializer.serialize(p);
+        dataPacket.n = n;
+        dataPacket.from = parent.myId;
+        dataPacket.data = messages;
+
+        byte[] buf = parent.serializer.serialize(dataPacket);
         Host dst = parent.hosts.get(dstId - 1);
         try {
             DatagramPacket dp = new DatagramPacket(buf, buf.length, InetAddress.getByName(dst.getIp()), dst.getPort());

@@ -10,19 +10,13 @@ public class NetworkTypes {
         public abstract int getN();
     }
     static class DataPacket<T> extends NetworkPacket {
-        public final int n;
-        public final int from;
-        public final List<T> data;
+        public int n;
+        public int from;
+        public List<T> data;
 
         @Override
         public int getN() {
             return n;
-        }
-
-        public DataPacket(int n, int from, List<T> data) {
-            this.n = n;
-            this.from = from;
-            this.data = data;
         }
 
         @Override
@@ -62,16 +56,20 @@ public class NetworkTypes {
     }
 
     static class AckPacket extends NetworkPacket {
-        public final int n;
-        public final int receiver_id;
+        public int n;
+        public int receiver_id;
+
+        public AckPacket() {
+        }
+
+        public AckPacket(int n, int receiver_id) {
+            this.n = n;
+            this.receiver_id = receiver_id;
+        }
 
         @Override
         public int getN() {
             return n;
-        }
-        public AckPacket(int n, int receiver_id) {
-            this.n = n;
-            this.receiver_id = receiver_id;
         }
     }
 
