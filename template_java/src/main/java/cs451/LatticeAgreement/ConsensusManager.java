@@ -7,7 +7,6 @@ import cs451.PerfectLinks.PerfectLink;
 
 import java.nio.ByteBuffer;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -145,6 +144,9 @@ public class ConsensusManager<T> {
             } finally {
                 handlingNowLock.unlock();
             }
+
+            if (consensusN % 200 == 0)
+                System.gc();
         }
     }
 
