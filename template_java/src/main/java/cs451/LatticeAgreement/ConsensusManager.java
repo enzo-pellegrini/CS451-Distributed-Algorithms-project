@@ -29,9 +29,8 @@ public class ConsensusManager<T> {
     private final Lock handlingNowLock = new ReentrantLock();
     private final Condition canHandleMore = handlingNowLock.newCondition();
 
-    private final Lock addShotLock = new ReentrantLock();
     private int nextConsensusNumber = 0;
-    private final Map<Integer, ConsensusInstance<T>> shots = new ConcurrentHashMap<>();
+    private final Map<Integer, ConsensusInstance<T>> shots = new HashMap<>();
     private final PriorityQueue<Decision<T>> decisions = new PriorityQueue<>(
             Comparator.comparingInt(d -> d.consensusNumber));
     private int lastDecided = -1;
@@ -51,7 +50,7 @@ public class ConsensusManager<T> {
         this.MAX_HANDLING = Math.min(100, Math.max(8, 10000 / (int) (Math.pow(hosts.size(), 2))));
         this.vs = vs;
         this.ds = ds;
-        System.out.println("MAX HANDLING: " + MAX_HANDLING);
+        // System.out.println("MAX HANDLING: " + MAX_HANDLING);
     }
 
     public void startThreads() {
@@ -65,7 +64,7 @@ public class ConsensusManager<T> {
     public void propose(Collection<T> proposal) {
         handlingNowLock.lock();
 
-        int consensusN;
+        ConsensusInstance<T> instance;
         try {
             while (nextConsensusNumber - lastDecided > MAX_HANDLING) {
                 try {
@@ -75,33 +74,39 @@ public class ConsensusManager<T> {
                 }
             }
 
-            consensusN = this.nextConsensusNumber++;
+            int consensusN = this.nextConsensusNumber++;
+
+            // System.out.println("Proposing on consensus number " + consensusN);
+            instance = shots.get(consensusN);
+            if (instance == null) {
+                instance = new ConsensusInstance<>(consensusN, this);
+                shots.put(consensusN, instance);
+            }
         } finally {
             handlingNowLock.unlock();
-        }
-
-        // System.out.println("Proposing on consensus number " + consensusN);
-        var instance = shots.get(consensusN);
-        if (instance == null) {
-            instance = createInstance(consensusN);
         }
 
         instance.propose(proposal);
     }
 
-    void onDecide(Set<T> ts, int consensusN) {
-        decisions.add(new Decision<>(consensusN, ts));
-
-        while (!decisions.isEmpty() && decisions.peek().consensusNumber == lastDecided + 1) {
-            var decision = decisions.poll();
-            decide.accept(decision.value);
-            // System.out.println("Decided on consensus number " + decision.consensusNumber);
-            lastDecided++;
-        }
+    synchronized void onDecide(Set<T> ts, int consensusN) {
+        // System.out.println("Decided on consensus number " + consensusN);
 
         handlingNowLock.lock();
         try {
-            canHandleMore.signal();
+            decisions.add(new Decision<>(consensusN, ts));
+
+            boolean printedAny = false;
+            while (!decisions.isEmpty() && decisions.peek().consensusNumber == lastDecided + 1) {
+                var decision = decisions.poll();
+                decide.accept(decision.value);
+                // System.out.println("Printing decision: " + decision.consensusNumber);
+                lastDecided++;
+                printedAny = true;
+            }
+
+            if (printedAny)
+                canHandleMore.signal();
         } finally {
             handlingNowLock.unlock();
         }
@@ -118,7 +123,8 @@ public class ConsensusManager<T> {
             instance = shots.get(consensusN);
             if (instance == null) {
                 if (consensusN >= this.nextConsensusNumber) {
-                    instance = createInstance(consensusN);
+                    instance = new ConsensusInstance<>(consensusN, this);
+                    shots.put(consensusN, instance);
                 } else {
                     return;
                 }
@@ -130,36 +136,34 @@ public class ConsensusManager<T> {
         instance.handlePackage(receivedMessage.data, receivedMessage.from);
 
         if (instance.canDie()) {
-            shots.remove(consensusN);
-        }
-    }
+            // System.out.println("gc consensus " + consensusN);
 
-    private ConsensusInstance<T> createInstance(int consensusN) {
-        ConsensusInstance<T> shot;
+            handlingNowLock.lock();
 
-        addShotLock.lock();
-        try {
-            shot = shots.get(consensusN);
-            if (shot == null) {
-                shot = new ConsensusInstance<>(consensusN, this);
-                shots.put(consensusN, shot);
+            try {
+                shots.remove(consensusN);
+            } finally {
+                handlingNowLock.unlock();
             }
-        } finally {
-            addShotLock.unlock();
         }
-
-        assert (shot != null);
-        return shot;
     }
 
     private boolean canCancel(ConsensusPackage p, int toId) {
         if (p instanceof ConsensusTypes.Decided)
             return false;
-        // handle each case
-        var shot = shots.get(p.getConsensusNumber());
-        if (shot == null)
+
+        handlingNowLock.lock();
+
+        ConsensusInstance<T> instance;
+        try {
+            instance = shots.get(p.getConsensusNumber());
+        } finally {
+            handlingNowLock.unlock();
+        }
+
+        if (instance == null)
             return true;
         else
-            return shot.canCancelMessage(p, toId);
+            return instance.canCancelMessage(p, toId);
     }
 }
